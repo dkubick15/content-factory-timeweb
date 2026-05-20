@@ -2,7 +2,7 @@
 
 ## GET /api/health
 
-Проверка backend. Возвращает статус сервиса, режим работы и активность OpenRouter.
+Проверка backend. Возвращает статус сервиса и подключение Timeweb-агента.
 
 ## POST /api/auth/register
 
@@ -24,37 +24,26 @@
 
 ## GET /api/config
 
-Требует Bearer token. Возвращает настройки аккаунта.
+Требует Bearer token. Возвращает настройки аккаунта, статус Timeweb-агента и настройки Telegram.
 
 ## POST /api/config
 
-Требует Bearer token. Сохраняет настройки OpenRouter API, выбранную модель и Telegram-настройки.
+Требует Bearer token. Сохраняет только настройки Telegram-публикации.
 
 ```json
 {
-  "openaiApiKey": "sk-or-v1-...",
-  "openaiBaseUrl": "https://openrouter.ai/api/v1",
-  "model": "deepseek/deepseek-v4-flash:free",
   "telegramBotToken": "...",
   "telegramChatId": "@channel"
 }
 ```
 
-Внутреннее поле для ключа называется `openaiApiKey`, но поддерживается автоматическая обратная совместимость - если в базе сохранены старые ключи `groqApiKeyEnc` или `geminiApiKeyEnc`, они будут корректно расшифрованы и использованы как `openaiApiKey`.
-
 ## POST /api/ai/test
 
-Требует Bearer token. Проверяет работоспособность OpenRouter API Key. В случае успешного теста ключ автоматически сохраняется в профиле пользователя.
-
-```json
-{
-  "openaiApiKey": "sk-or-v1-..."
-}
-```
+Требует Bearer token. Проверяет, отвечает ли Timeweb-агент, настроенный через `TIMEWEB_API_KEY` и `TIMEWEB_AGENT_ID` на сервере.
 
 ## POST /api/generate
 
-Требует Bearer token. Генерация контента идёт через OpenRouter API с динамически выбранной моделью (или моделью по умолчанию `deepseek/deepseek-v4-flash:free`).
+Требует Bearer token. Генерация контента идёт только через Timeweb-агента.
 
 ```json
 {

@@ -729,12 +729,11 @@
         busy: false,
         secretVisible: {},
         settings: {
-          model: "llama-3.3-70b-versatile",
+          model: "",
           ideaCount: "1",
           style: "острый, экспертный, без воды",
           objective: "заявки",
           openaiApiKey: "",
-          openaiBaseUrl: "https://api.groq.com/openai/v1",
           telegramBotToken: "",
           telegramChatId: "",
           backendStatus: "не проверен"
@@ -795,11 +794,6 @@
           const parsed = JSON.parse(raw);
           const merged = { ...clone(defaultState), ...parsed };
           merged.settings = { ...clone(defaultState.settings), ...(parsed.settings || {}) };
-          
-          // Migrate old gemini/groq credentials to openaiApiKey if they exist
-          if ((parsed.settings?.geminiApiKey || parsed.settings?.groqApiKey) && !merged.settings.openaiApiKey) {
-            merged.settings.openaiApiKey = parsed.settings.geminiApiKey || parsed.settings.groqApiKey;
-          }
           
           merged.settings.openaiApiKey = "";
           merged.settings.telegramBotToken = "";
@@ -928,7 +922,7 @@
           response = await fetch(path, { method: options.method || "GET", headers, body, signal: controller.signal });
         } catch (error) {
           if (error?.name === "AbortError") {
-            throw new Error(`Запрос не ответил за ${Math.round(timeoutMs / 1000)} секунд. Попробуй другую модель или провайдера.`);
+            throw new Error(`Запрос не ответил за ${Math.round(timeoutMs / 1000)} секунд. Попробуй запустить ещё раз.`);
           }
           throw error;
         } finally {
@@ -983,15 +977,15 @@
       function cleanError(message) {
         const text = String(message || "Ошибка");
         if (text.includes("API_KEY_INVALID") || text.includes("api key not valid") || text.includes("401") || text.includes("unauthorized") || text.includes("Forbidden")) {
-          return "API-ключ или токен отклонен ИИ-провайдером. Обратитесь к администратору для проверки серверной конфигурации.";
+          return "Timeweb-токен отклонен. Обратитесь к администратору для проверки серверной конфигурации.";
         }
         if (text.toLowerCase().includes("connection error") || text.toLowerCase().includes("fetch")) {
-          return "Ошибка подключения: сервер не смог связаться с ИИ-провайдером. Проверьте сеть или статус провайдера.";
+          return "Ошибка подключения: сервер не смог связаться с Timeweb-агентом.";
         }
         if (/не ответил за|timeout|timed out|aborted/i.test(text)) {
           return "Сервис ИИ отвечает слишком долго. Попробуйте запустить генерацию снова.";
         }
-        if (text.includes("OPENROUTER_API_KEY") || text.includes("openaiApiKey") || text.toLowerCase().includes("api key") || text.toLowerCase().includes("подключение не настроено")) {
+        if (text.includes("TIMEWEB_API_KEY") || text.includes("TIMEWEB_AGENT_ID") || text.toLowerCase().includes("api key") || text.toLowerCase().includes("подключение не настроено")) {
           return "ИИ-подключение не настроено на сервере. Обратитесь к администратору сайта.";
         }
         if (text.includes("429") || text.includes("limit") || text.toLowerCase().includes("rate limit")) {
@@ -1045,7 +1039,7 @@
         const project = activeProject();
         const content = selectedContent();
         const lastBad = state.logs.find((log) => log.type === "bad");
-        const shouldShowRegionNotice = lastBad?.text?.includes("OpenRouter") || lastBad?.text?.includes("API_KEY_INVALID") || lastBad?.text?.includes("ключ");
+        const shouldShowRegionNotice = lastBad?.text?.includes("Timeweb") || lastBad?.text?.includes("API_KEY_INVALID") || lastBad?.text?.includes("ключ");
 
         return `
           <section class="grid-hero">
@@ -1272,11 +1266,6 @@
       function renderSettings() {
         const s = state.settings;
         const aiReady = Boolean(s.openaiApiKey);
-        const providerName = String(s.openaiBaseUrl || "").includes("groq.com")
-          ? "Groq"
-          : String(s.openaiBaseUrl || "").includes("openrouter.ai")
-            ? "OpenRouter"
-            : "OpenAI-совместимый API";
         return `
           <section class="stack">
             <div class="panel">
@@ -1284,10 +1273,10 @@
                 <div class="row">
                   <div>
                     <div class="kicker">Настройки AI</div>
-                    <h1 class="title">Конфигурация ИИ</h1>
-                    <p class="text">Подключи серверный или личный ключ. Он сохраняется на сервере в зашифрованном виде и не попадает в браузер после перезагрузки.</p>
+                    <h1 class="title">Timeweb-агент</h1>
+                    <p class="text">Генерация работает через подключенного агента на сервере. Пользователю не нужно вводить ключи или выбирать модели.</p>
                   </div>
-                  <span class="chip ${aiReady ? "ok" : "warn"}">${aiReady ? "ИИ подключён" : "нужен ключ"}</span>
+                  <span class="chip ${aiReady ? "ok" : "warn"}">${aiReady ? "агент подключён" : "агент не настроен"}</span>
                 </div>
               </div>
             </div>
@@ -1295,16 +1284,10 @@
             <div class="manual-ai-grid">
               <div class="panel">
                 <div class="pad">
-                  <div class="kicker">Ключ генерации</div>
-                  <h2 class="title">Подключение ИИ</h2>
-                  <p class="text">Для Groq укажи базовый адрес <strong>https://api.groq.com/openai/v1</strong>. Для OpenRouter - <strong>https://openrouter.ai/api/v1</strong>.</p>
-                  <div class="form" style="margin-top:22px;">
-                    ${renderSecretInput("openaiApiKey", "API-ключ ИИ", s.openaiApiKey, "gsk_... или sk-or-...")}
-                    ${renderSettingInput("openaiBaseUrl", "Базовый адрес API", s.openaiBaseUrl || "https://api.groq.com/openai/v1", "https://api.groq.com/openai/v1")}
-                    ${renderSettingInput("model", "Модель", s.model || "llama-3.3-70b-versatile", "llama-3.3-70b-versatile")}
-                  </div>
-                  <div class="actions" style="margin-top: 18px;">
-                    <button class="btn primary" data-action="save-server-config">Сохранить ключ</button>
+                  <div class="kicker">Генерация</div>
+                  <h2 class="title">Подключение готово</h2>
+                  <p class="text">Контент создаёт твой Timeweb-агент. Ключ хранится только в переменных окружения сервера и не показывается в интерфейсе.</p>
+                  <div class="actions" style="margin-top: 24px;">
                     <button class="btn primary" data-action="check-ai-key">${icons.check} Проверить соединение</button>
                     <button class="btn" data-action="generate">Тест генерации</button>
                   </div>
@@ -1316,10 +1299,10 @@
                   <div>
                     <div class="kicker">Статус подключения</div>
                     <h2 class="title">Сервер</h2>
-                    <p class="text">Текущий провайдер: <strong>${escapeHtml(providerName)}</strong>. Если проверка падает, обычно не совпадает ключ, базовый адрес или модель.</p>
+                    <p class="text">Проверка показывает, отвечает ли сервер и доступен ли Timeweb-агент.</p>
                   </div>
                   <div class="auto-tight">
-                    ${renderMetric(aiReady ? "подключён" : "нет ключа", "ИИ-сервер", providerName)}
+                    ${renderMetric(aiReady ? "подключён" : "нет агента", "Timeweb-агент", "Серверная настройка")}
                     ${renderMetric(s.backendStatus || "не проверен", "Состояние бэка", "Проверка эндпоинта /api/health")}
                   </div>
                   <div class="one-key-actions">
@@ -1548,10 +1531,9 @@
         try {
           const data = await request("/api/config");
           state.settings.openaiApiKey = data.openaiApiKey || state.settings.openaiApiKey || "";
-          state.settings.openaiBaseUrl = data.openaiBaseUrl || state.settings.openaiBaseUrl || "https://api.groq.com/openai/v1";
           state.settings.telegramBotToken = data.telegramBotToken || state.settings.telegramBotToken || "";
           state.settings.telegramChatId = data.telegramChatId ?? state.settings.telegramChatId;
-          state.settings.model = data.model || state.settings.model || "llama-3.3-70b-versatile";
+          state.settings.model = data.model || state.settings.model || "";
           render();
         } catch (error) {
           addLog("warn", "Не удалось получить настройки аккаунта: " + error.message);
@@ -1563,11 +1545,8 @@
         setBusy(true);
         try {
           const body = {
-            openaiApiKey: state.settings.openaiApiKey || "",
-            openaiBaseUrl: state.settings.openaiBaseUrl || "https://api.groq.com/openai/v1",
             telegramBotToken: state.settings.telegramBotToken || "",
-            telegramChatId: state.settings.telegramChatId || "",
-            model: state.settings.model || "llama-3.3-70b-versatile"
+            telegramChatId: state.settings.telegramChatId || ""
           };
           const data = await request("/api/config", { method: "POST", body });
           addLog("ok", "Настройки аккаунта сохранены.", JSON.stringify(data, null, 2));
@@ -1644,9 +1623,9 @@
           addLog("bad", "Ошибка генерации: " + message, error.message);
           showToast("Ошибка генерации");
           if (String(error.message).includes("API_KEY_INVALID") || String(error.message).includes("unauthorized") || String(error.message).includes("401") || String(error.message).includes("Forbidden")) {
-            openModal("Доступ к ИИ отклонен", "ИИ-провайдер отклонил запрос (неверный ключ или токен). Обратитесь к администратору для проверки конфигурации.", `<div class="actions"><button class="btn primary" data-action="tab" data-tab="settings">В настройки</button></div>`);
+            openModal("Доступ к ИИ отклонен", "Timeweb отклонил запрос. Обратитесь к администратору для проверки токена и агента.", `<div class="actions"><button class="btn primary" data-action="tab" data-tab="settings">В настройки</button></div>`);
           } else if (String(error.message).toLowerCase().includes("connection error") || String(error.message).toLowerCase().includes("fetch")) {
-            openModal("Нет соединения с ИИ", "Сервер не смог подключиться к провайдеру ИИ. Проверьте сеть или доступность сервиса.", `<div class="actions"><button class="btn primary" data-action="tab" data-tab="settings">В настройки</button><button class="btn" data-action="tab" data-tab="logs">Журнал</button></div>`);
+            openModal("Нет соединения с ИИ", "Сервер не смог подключиться к Timeweb-агенту. Проверьте сеть или доступность сервиса.", `<div class="actions"><button class="btn primary" data-action="tab" data-tab="settings">В настройки</button><button class="btn" data-action="tab" data-tab="logs">Журнал</button></div>`);
           } else if (/не ответил за|timeout|timed out|aborted/i.test(String(error.message))) {
             openModal("ИИ слишком долго отвечает", "Запрос был остановлен по таймауту на сервере. Попробуйте снова или проверьте лимиты.", `<div class="actions"><button class="btn primary" data-action="tab" data-tab="settings">В настройки</button><button class="btn" data-action="tab" data-tab="logs">Журнал</button></div>`);
           } else {
@@ -1907,7 +1886,7 @@
             if (customInput) customInput.value = val;
           } else {
             const customInput = document.querySelector('[name="model"]');
-            state.settings.model = customInput ? customInput.value : "llama-3.3-70b-versatile";
+            state.settings.model = customInput ? customInput.value : "";
             const customWrapper = document.getElementById("customModelWrapper");
             if (customWrapper) customWrapper.style.display = "block";
           }

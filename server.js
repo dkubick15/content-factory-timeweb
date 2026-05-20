@@ -18,10 +18,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const DEFAULT_AI_MODEL = process.env.DEFAULT_MODEL
-  || process.env.DEFAULT_AI_MODEL
-  || process.env.GROQ_MODEL
-  || ((process.env.GROQ_API_KEY || process.env.GROQ_KEY) ? "llama-3.3-70b-versatile" : "deepseek/deepseek-v4-flash:free");
+const DEFAULT_AI_MODEL = process.env.DEFAULT_MODEL || process.env.DEFAULT_AI_MODEL || "timeweb-agent";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 200);
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 180000);
@@ -29,12 +26,6 @@ const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 8000);
 
 const TIMEWEB_API_KEY = process.env.TIMEWEB_API_KEY || process.env.TIMEWEB_KEY || "";
 const TIMEWEB_AGENT_ID = process.env.TIMEWEB_AGENT_ID || "";
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || "";
-const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.GROQ_KEY || "";
-const GLOBAL_AI_API_KEY = OPENROUTER_API_KEY || GROQ_API_KEY;
-const GLOBAL_AI_BASE_URL = process.env.OPENROUTER_BASE_URL
-  || process.env.GROQ_BASE_URL
-  || (GROQ_API_KEY ? "https://api.groq.com/openai/v1" : "https://openrouter.ai/api/v1");
 
 let DATA_DIR = process.env.DATA_DIR;
 
@@ -204,7 +195,6 @@ function decryptSecret(value) {
 function defaultUserSettings() {
   return {
     openaiApiKeyEnc: "",
-    openaiBaseUrl: "",
     model: DEFAULT_AI_MODEL,
     telegramBotTokenEnc: "",
     telegramChatId: ""
@@ -222,8 +212,7 @@ function getPublicUser(user) {
 function getUserSettingsForServer(user) {
   const settings = { ...defaultUserSettings(), ...(user.settings || {}) };
   return {
-    openaiApiKey: decryptSecret(settings.openaiApiKeyEnc || settings.groqApiKeyEnc || settings.geminiApiKeyEnc) || process.env.TIMEWEB_API_KEY || process.env.TIMEWEB_KEY || GLOBAL_AI_API_KEY || "",
-    openaiBaseUrl: settings.openaiBaseUrl || GLOBAL_AI_BASE_URL,
+    openaiApiKey: TIMEWEB_API_KEY,
     model: settings.model || DEFAULT_AI_MODEL,
     telegramBotToken: decryptSecret(settings.telegramBotTokenEnc) || process.env.TELEGRAM_BOT_TOKEN || "",
     telegramChatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID || ""
@@ -241,7 +230,6 @@ function getUserSettingsForClient(user) {
 
   return {
     openaiApiKey: maskKey(serverSettings.openaiApiKey),
-    openaiBaseUrl: serverSettings.openaiBaseUrl,
     model: serverSettings.model,
     telegramBotToken: maskKey(serverSettings.telegramBotToken),
     telegramChatId: serverSettings.telegramChatId
@@ -358,85 +346,6 @@ async function callTimewebAgentApi(apiKey, agentId, payload, options = {}) {
     },
     provider: "Timeweb Cloud AI Agent",
     model: activeAgentId
-  };
-}
-
-function providerNameFromBaseUrl(baseUrl) {
-  const value = String(baseUrl || "").toLowerCase();
-  if (value.includes("groq.com")) return "Groq";
-  if (value.includes("openrouter.ai")) return "OpenRouter";
-  return "OpenAI-compatible API";
-}
-
-async function callOpenAiCompatibleApi(apiKey, baseUrl, model, payload, options = {}) {
-  const messages = payload.messages || [];
-  const activeModel = String(options.overrides?.model || model || DEFAULT_AI_MODEL).trim();
-  const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
-  const provider = providerNameFromBaseUrl(baseUrl);
-
-  const body = {
-    model: activeModel,
-    messages: messages,
-    temperature: payload.temperature !== undefined ? payload.temperature : 0.35,
-    max_tokens: payload.max_tokens || AI_MAX_TOKENS
-  };
-
-  if (options.json) {
-    body.response_format = { type: "json_object" };
-  }
-
-  const headers = {
-    "Authorization": `Bearer ${apiKey}`,
-    "Content-Type": "application/json"
-  };
-
-  if (provider === "OpenRouter") {
-    headers["HTTP-Referer"] = PUBLIC_BASE_URL || "https://github.com/kubik/content-factory";
-    headers["X-OpenRouter-Title"] = "Content Factory";
-  }
-
-  const fetchPromise = fetch(url, {
-    method: "POST",
-    headers: headers,
-    body: JSON.stringify(body)
-  }).then(async (response) => {
-    const errText = await response.text();
-    let parsedData;
-    try {
-      parsedData = JSON.parse(errText);
-    } catch {
-      parsedData = { error: { message: errText } };
-    }
-
-    if (!response.ok) {
-      throw new Error(parsedData?.error?.message || `Ошибка API ${provider} (${response.status})`);
-    }
-    return parsedData;
-  });
-
-  const data = await withTimeout(
-    fetchPromise,
-    AI_TIMEOUT_MS,
-    `${provider} (${activeModel})`
-  );
-
-  const text = data?.choices?.[0]?.message?.content || "";
-  if (!text) {
-    throw new Error(`${provider} не вернул текстовый ответ`);
-  }
-
-  return {
-    completion: {
-      choices: [
-        {
-          message: {
-            content: text
-          }
-        }
-      ]
-    },
-    provider,
-    model: activeModel
   };
 }
 
@@ -754,7 +663,7 @@ function withTimeout(promise, ms, label) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => {
-      reject(new Error(`${label} не ответил за ${Math.round(ms / 1000)} секунд. Попробуй другую модель или провайдера.`));
+      reject(new Error(`${label} не ответил за ${Math.round(ms / 1000)} секунд. Попробуй запустить ещё раз.`));
     }, ms);
   });
 
@@ -764,31 +673,17 @@ function withTimeout(promise, ms, label) {
 app.get("/api/health", (req, res) => {
   const store = loadStore();
   const hasTimeweb = Boolean(TIMEWEB_API_KEY && TIMEWEB_AGENT_ID);
-  const hasOpenRouter = Boolean(OPENROUTER_API_KEY);
-  const hasGroq = Boolean(GROQ_API_KEY);
-  const provider = providerNameFromBaseUrl(GLOBAL_AI_BASE_URL);
-  
-  let mode = "multi-user-ai-key";
-  if (hasTimeweb) {
-    mode = "private-timeweb-agent";
-  } else if (hasOpenRouter) {
-    mode = "private-openrouter-global";
-  } else if (hasGroq) {
-    mode = "private-groq-global";
-  }
 
   res.json({
     ok: true,
     service: "content-factory-backend",
-    mode: mode,
+    mode: hasTimeweb ? "private-timeweb-agent" : "timeweb-agent-not-configured",
     users: store.users.length,
     maxUploadMb: MAX_UPLOAD_MB,
     aiTimeoutMs: AI_TIMEOUT_MS,
-    provider: hasTimeweb ? "Timeweb Cloud AI Agent" : provider,
-    openrouter: hasOpenRouter || (!hasTimeweb && !hasGroq),
-    groq: hasGroq,
+    provider: "Timeweb Cloud AI Agent",
     timeweb: hasTimeweb,
-    defaultModel: hasTimeweb ? TIMEWEB_AGENT_ID : DEFAULT_AI_MODEL,
+    agent: hasTimeweb ? TIMEWEB_AGENT_ID : "",
     node: process.version,
     port: PORT
   });
@@ -886,25 +781,13 @@ app.get("/api/config", requireAuth, (req, res) => {
 });
 
 app.post("/api/config", requireAuth, (req, res) => {
-  const { openaiApiKey, openaiBaseUrl, telegramBotToken, telegramChatId, model } = req.body || {};
+  const { telegramBotToken, telegramChatId } = req.body || {};
 
   try {
     const user = req.store.users.find((item) => item.id === req.user.id);
     if (!user) return res.status(401).json({ error: "Аккаунт не найден. Войди заново." });
 
     user.settings = { ...defaultUserSettings(), ...(user.settings || {}) };
-
-    if (openaiApiKey !== undefined) {
-      const trimmed = String(openaiApiKey).trim();
-      const isMasked = trimmed.includes("...") || trimmed.includes("***");
-      if (!(isMasked && user.settings.openaiApiKeyEnc)) {
-        user.settings.openaiApiKeyEnc = encryptSecret(trimmed);
-      }
-    }
-
-    if (openaiBaseUrl !== undefined) {
-      user.settings.openaiBaseUrl = String(openaiBaseUrl || "").trim();
-    }
 
     if (telegramBotToken !== undefined) {
       const trimmed = String(telegramBotToken).trim();
@@ -916,10 +799,6 @@ app.post("/api/config", requireAuth, (req, res) => {
 
     if (telegramChatId !== undefined) {
       user.settings.telegramChatId = String(telegramChatId || "").trim();
-    }
-
-    if (model !== undefined) {
-      user.settings.model = String(model || DEFAULT_AI_MODEL).trim();
     }
 
     user.updatedAt = new Date().toISOString();
@@ -941,82 +820,37 @@ app.post("/api/config", requireAuth, (req, res) => {
 
 app.post("/api/ai/test", requireAuth, async (req, res) => {
   try {
-    if (TIMEWEB_API_KEY && TIMEWEB_AGENT_ID) {
-      const result = await callTimewebAgentApi(TIMEWEB_API_KEY, TIMEWEB_AGENT_ID, {
-        messages: [
-          { role: "system", content: "Ответь одним словом: OK" },
-          { role: "user", content: "Проверка подключения" }
-        ]
-      });
-      return res.json({
-        ok: true,
-        message: "Timeweb Cloud AI Agent работает",
-        provider: result.provider,
-        model: result.model,
-        endpoint: "timeweb",
-        reply: String(result.completion.choices?.[0]?.message?.content || "").slice(0, 120)
-      });
+    if (!TIMEWEB_API_KEY || !TIMEWEB_AGENT_ID) {
+      return res.status(400).json({ error: "Timeweb-агент не настроен на сервере." });
     }
 
-    const serverSettings = getUserSettingsForServer(req.user);
-    let apiKey = String(req.body?.openaiApiKey || "").trim();
-    if (!apiKey || apiKey.includes("...") || apiKey.includes("***")) {
-      apiKey = serverSettings.openaiApiKey;
-    }
-
-    if (!apiKey) {
-      return res.status(400).json({ error: "Вставь API-ключ ИИ." });
-    }
-
-    const result = await callOpenAiCompatibleApi(apiKey, serverSettings.openaiBaseUrl, serverSettings.model, {
-      temperature: 0,
+    const result = await callTimewebAgentApi(TIMEWEB_API_KEY, TIMEWEB_AGENT_ID, {
       messages: [
         { role: "system", content: "Ответь одним словом: OK" },
         { role: "user", content: "Проверка подключения" }
       ]
     });
 
-    // Автоматически сохраняем проверенный рабочий ключ в профиле пользователя
-    const user = req.store.users.find((item) => item.id === req.user.id);
-    if (user) {
-      user.settings = { ...defaultUserSettings(), ...(user.settings || {}) };
-      user.settings.openaiApiKeyEnc = encryptSecret(apiKey);
-      user.updatedAt = new Date().toISOString();
-      saveStore(req.store);
-    }
-
     res.json({
       ok: true,
-      message: `${result.provider} API-ключ работает`,
+      message: "Timeweb Cloud AI Agent работает",
       provider: result.provider,
       model: result.model,
-      endpoint: result.provider.toLowerCase(),
+      endpoint: "timeweb",
       reply: String(result.completion.choices?.[0]?.message?.content || "").slice(0, 120)
     });
   } catch (error) {
     console.error("ai test error:", error);
     const message = String(error?.message || "Ошибка проверки подключения к AI");
     let hint = "";
-    if (TIMEWEB_API_KEY && TIMEWEB_AGENT_ID) {
-      if (/API_KEY_INVALID|invalid|401|403/i.test(message)) {
-        hint = "API токен Timeweb не принят. Убедись, что токен верный и активен.";
-      } else if (/не ответил за|timeout|timed out|aborted/i.test(message)) {
-        hint = "Timeweb AI Agent отвечает слишком долго.";
-      } else if (/Connection error|fetch/i.test(message)) {
-        hint = "Сервер не смог подключиться к API Timeweb.";
-      }
-    } else {
-      if (/API_KEY_INVALID|invalid|401|403/i.test(message)) {
-        hint = "ИИ-провайдер не принял ключ. Убедись, что ключ верный, активен и подходит к выбранному базовому адресу.";
-      } else if (/provider returned error|provider/i.test(message)) {
-        hint = "Выбранная модель ИИ сейчас перегружена или недоступна. Сам ключ при этом рабочий! Попробуй выбрать другую бесплатную модель в списке настроек (например, DeepSeek V4 Flash или Qwen) и проверь ключ заново.";
-      } else if (/404/i.test(message)) {
-        hint = "Модель не найдена или временно недоступна.";
-      } else if (/не ответил за|timeout|timed out|aborted/i.test(message)) {
-        hint = "ИИ-провайдер отвечает слишком долго.";
-      } else if (/Connection error|fetch/i.test(message)) {
-        hint = "Сервер не смог подключиться к ИИ-провайдеру.";
-      }
+    if (/API_KEY_INVALID|invalid|401|403/i.test(message)) {
+      hint = "API токен Timeweb не принят. Убедись, что токен верный и активен.";
+    } else if (/agent_not_found|Agent not found|404/i.test(message)) {
+      hint = "Timeweb-агент не найден. Проверь TIMEWEB_AGENT_ID.";
+    } else if (/не ответил за|timeout|timed out|aborted|504/i.test(message)) {
+      hint = "Timeweb-агент отвечает слишком долго.";
+    } else if (/Connection error|fetch/i.test(message)) {
+      hint = "Сервер не смог подключиться к API Timeweb.";
     }
     res.status(500).json({ error: hint ? `${message}. ${hint}` : message });
   }
@@ -1024,14 +858,12 @@ app.post("/api/ai/test", requireAuth, async (req, res) => {
 
 app.post("/api/generate", requireAuth, async (req, res) => {
   try {
-    const userSettings = getUserSettingsForServer(req.user);
     const timewebApiKey = TIMEWEB_API_KEY;
     const timewebAgentId = TIMEWEB_AGENT_ID;
-    const activeApiKey = userSettings.openaiApiKey || GLOBAL_AI_API_KEY;
 
-    if (!timewebApiKey && !activeApiKey) {
+    if (!timewebApiKey || !timewebAgentId) {
       return res.status(400).json({
-        error: "ИИ-подключение не настроено на сервере. Обратись к администратору сайта."
+        error: "Timeweb-агент не настроен на сервере. Обратись к администратору сайта."
       });
     }
 
@@ -1085,14 +917,7 @@ app.post("/api/generate", requireAuth, async (req, res) => {
     };
 
     let aiResult;
-    if (timewebApiKey && timewebAgentId) {
-      aiResult = await callTimewebAgentApi(timewebApiKey, timewebAgentId, requestPayload);
-    } else {
-      aiResult = await callOpenAiCompatibleApi(activeApiKey, userSettings.openaiBaseUrl, userSettings.model, requestPayload, {
-        json: true,
-        overrides: { model: settings?.model }
-      });
-    }
+    aiResult = await callTimewebAgentApi(timewebApiKey, timewebAgentId, requestPayload);
     const completion = aiResult.completion;
     const modelToUse = aiResult.model;
     const providerToUse = aiResult.provider;
@@ -1133,14 +958,12 @@ app.post("/api/generate", requireAuth, async (req, res) => {
     const message = String(error?.message || "Ошибка генерации");
     let hint = "";
 
-    if (/404/i.test(message)) {
-      hint = "Модель или endpoint не найдены у автоматически определённого AI-провайдера.";
-    } else if (/provider returned error|provider/i.test(message)) {
-      hint = "Выбранная бесплатная модель сейчас перегружена или недоступна на стороне OpenRouter. Попробуй временно сменить её на другую модель в настройках (например, DeepSeek V4 Flash или Qwen) и попробуй запустить генерацию снова.";
-    } else if (/не ответил за|timeout|timed out|aborted/i.test(message)) {
-      hint = "AI API отвечает слишком долго. Проверь лимиты провайдера или попробуй другой ключ.";
+    if (/agent_not_found|Agent not found|404/i.test(message)) {
+      hint = "Timeweb-агент не найден. Проверь TIMEWEB_AGENT_ID.";
+    } else if (/не ответил за|timeout|timed out|aborted|504/i.test(message)) {
+      hint = "Timeweb-агент отвечает слишком долго. Попробуй запустить генерацию снова.";
     } else if (/Connection error/i.test(message)) {
-      hint = "Сервер не смог подключиться к AI API. Обычно причина в endpoint/model на сервере, сетевом блоке или временной недоступности провайдера.";
+      hint = "Сервер не смог подключиться к API Timeweb.";
     }
 
     res.status(500).json({
