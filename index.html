@@ -10,6 +10,7 @@
     @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
 
     :root {
+      color-scheme: dark;
       --bg: #070710;
       --bg-2: #0b0e1b;
       --card: rgba(255,255,255,.075);
@@ -88,13 +89,14 @@
     }
 
     .auth-card, .panel, .mini-panel, .modal-card {
-      border: 1px solid var(--line);
-      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.11);
+      background: linear-gradient(135deg, rgba(16,20,38,0.6) 0%, rgba(10,13,26,0.8) 100%);
       backdrop-filter: blur(24px);
-      box-shadow: var(--shadow);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.06);
       border-radius: var(--radius);
       min-width: 0;
       overflow: hidden;
+      transition: border-color var(--fast), box-shadow var(--fast);
     }
 
     .auth-card {
@@ -244,11 +246,12 @@
 
     .kicker {
       margin-bottom: 10px;
-      color: var(--soft);
+      color: var(--cyan);
       font-size: 11px;
       font-weight: 900;
       letter-spacing: .16em;
       text-transform: uppercase;
+      text-shadow: 0 0 12px rgba(69,211,255,0.24);
     }
 
     .title-xl, .title, .auth-title {
@@ -406,11 +409,18 @@
 
     .hero-step {
       flex: 1 1 180px;
-      border: 1px solid rgba(255,255,255,.12);
-      background: rgba(255,255,255,.055);
-      border-radius: 22px;
-      padding: 14px;
+      border: 1px solid rgba(255,255,255,.07);
+      background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%);
+      border-radius: 20px;
+      padding: 16px 18px;
       min-width: 0;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+      transition: all var(--fast);
+    }
+    .hero-step:hover {
+      border-color: rgba(99,136,255,0.22);
+      background: linear-gradient(135deg, rgba(99,136,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
+      transform: translateY(-2px);
     }
 
     .hero-step b {
@@ -536,10 +546,57 @@
     .help-list { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
     .help-list li { color: var(--muted); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
 
-    .title, .title-xl, .title-sm, .lead, .text, .item-title, .item-sub, .card-title, .card-text, .metric-value, .metric-hint, .chip, .badge, .btn, .nav-btn, .account-pill, .input, .textarea, .select, .modal-pre, .empty, .code-token, .label {
+    /* Standard typography elements wrapping rules */
+    .title, .title-xl, .title-sm, .lead, .text, .item-title, .item-sub, .card-title, .card-text, .metric-value, .metric-hint, .chip, .badge, .btn, .nav-btn, .account-pill, .input, .textarea, .select, .empty, .label {
+      max-width: 100%;
+      overflow-wrap: break-word;
+      word-break: normal;
+    }
+
+    /* Long raw technical tokens, code blocks, logs, pre elements where character splitting prevents layout overflow */
+    .code-token, .modal-pre, .log-meta, .log-text {
       max-width: 100%;
       overflow-wrap: anywhere;
-      word-break: break-word;
+      word-break: break-all;
+    }
+
+    /* Preserves line breaks in post body previews inside queue card list */
+    .body-text-preview {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+      font-weight: 500;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: normal;
+    }
+
+    /* Active idea item-sub visibility fix */
+    .idea.active .item-sub {
+      color: rgba(8, 9, 20, 0.65);
+    }
+
+    /* Premium dark custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 99px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    /* Elastic micro-interactions */
+    .btn:active, .nav-btn:active, .platform:active, .idea:active {
+      transform: scale(0.96) translateY(0);
+      transition: transform 0.08s ease;
     }
 
     .input, .textarea, .select, .panel, .pad, .stack, .auto, .layout, .grid-hero, .manual-ai-grid { min-width: 0; }
@@ -590,10 +647,23 @@
     }
 
     .list { display: grid; gap: 12px; }
-    .item-row, .media-card, .queue-card, .project-card { padding: 15px; display: flex; gap: 12px; align-items: flex-start; }
+    .item-row, .media-card, .queue-card, .project-card {
+      padding: 18px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      border: 1px solid rgba(255,255,255,0.07);
+      background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+      transition: all var(--fast);
+    }
+    .media-card:hover, .queue-card:hover {
+      border-color: rgba(255,255,255,0.16);
+      background: linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%);
+    }
     .item-body { min-width: 0; flex: 1; }
-    .item-title { font-size: 14px; line-height: 1.28; font-weight: 900; word-break: break-word; }
-    .item-sub { margin-top: 6px; color: var(--soft); font-size: 12px; line-height: 1.55; font-weight: 700; word-break: break-word; }
+    .item-title { font-size: 15px; line-height: 1.35; font-weight: 900; color: #fff; }
+    .item-sub { margin-top: 6px; color: var(--soft); font-size: 12px; line-height: 1.55; font-weight: 700; }
     .item-foot { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 
     .preview {
@@ -1640,7 +1710,7 @@
           return `
             <label class="field">
               <span class="label">${escapeHtml(label)}</span>
-              <textarea class="textarea" data-action="project-input" name="${escapeHtml(name)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off" rows="3" style="resize: vertical; width: 100%; min-height: 80px; font-family: inherit; font-size: 14px; padding: 10px 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: var(--fg); color-scheme: dark; transition: border-color var(--fast), background-color var(--fast);">${escapeHtml(value || "")}</textarea>
+              <textarea class="textarea" data-action="project-input" name="${escapeHtml(name)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off" rows="3" style="resize: vertical; min-height: 90px;">${escapeHtml(value || "")}</textarea>
             </label>
           `;
         }
@@ -1718,9 +1788,10 @@
 
       function renderQueueCard(item) {
         const media = state.media.find((m) => m.id === item.mediaId);
+        const hasMedia = Boolean(media);
         return `
           <div class="queue-card">
-            <div style="width:min(210px,100%); flex:0 0 auto;">${renderPreview(media)}</div>
+            ${hasMedia ? `<div style="width:min(210px,100%); flex:0 0 auto;">${renderPreview(media)}</div>` : ""}
             <div class="item-body">
               <div class="row" style="align-items:flex-start;">
                 <div>
@@ -1729,7 +1800,7 @@
                 </div>
                 <span class="chip ${item.state === "Ошибка" ? "bad" : item.state === "Опубликовано" ? "ok" : "info"}">${escapeHtml(item.state || "Готово")}</span>
               </div>
-              <div class="item-sub" style="margin-top:10px;">${escapeHtml(shorten(item.body, 170))}</div>
+              <div class="body-text-preview">${escapeHtml(shorten(item.body, 170))}</div>
               <div class="item-sub" style="margin-top:8px;">${escapeHtml(item.goal || "цель не указана")}${item.reason ? " · " + escapeHtml(item.reason) : ""}</div>
               <div class="item-foot">
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
