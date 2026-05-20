@@ -1494,6 +1494,45 @@
 
               <div class="panel">
                 <div class="pad">
+                  <div class="kicker">Instagram</div>
+                  <h2 class="title">Reels автопостинг</h2>
+                  <p class="text">Вставь Access Token от Meta и User ID аккаунта. Нужен Instagram бизнес-аккаунт и приложение в <a href="https://developers.facebook.com" target="_blank" style="color:var(--cyan);">Meta Developers</a> с разрешением <code>instagram_business_content_publish</code>.</p>
+                  <div class="form" style="margin-top:22px;">
+                    ${renderSecretInput("instagramAccessToken", "Instagram Access Token", s.instagramAccessToken || "", "EAAG...")}
+                    ${renderSettingInput("instagramUserId", "Instagram User ID", s.instagramUserId || "", "17841400...")}
+                  </div>
+                  <div class="auto-tight" style="margin-top:12px;">
+                    ${renderMetric(s.instagramReady ? "подключён" : "не подключён", "Instagram статус", s.instagramReady ? "Reels API готов" : "Укажи токен и User ID")}
+                  </div>
+                  <div class="actions">
+                    <button class="btn primary" data-action="save-instagram-config">Сохранить Instagram</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="pad">
+                  <div class="kicker">YouTube</div>
+                  <h2 class="title">Shorts автопостинг</h2>
+                  <p class="text">Подключи YouTube-канал через Google OAuth. Один раз нажми кнопку, авторизуйся — и сервер будет публиковать Shorts автоматически. Для работы в .env на сервере нужны <code>YOUTUBE_CLIENT_ID</code> и <code>YOUTUBE_CLIENT_SECRET</code>.</p>
+                  <div class="auto-tight" style="margin-top:16px;">
+                    ${renderMetric(
+                      s.youtubeConnected ? "подключён" : "не подключён",
+                      "YouTube статус",
+                      s.youtubeChannelId ? `Канал ID: ${s.youtubeChannelId}` : (s.youtubeOAuthEnabled ? "OAuth настроен на сервере" : "Нужен YOUTUBE_CLIENT_ID в .env")
+                    )}
+                  </div>
+                  <div class="actions" style="margin-top:16px;">
+                    ${s.youtubeConnected
+                      ? `<button class="btn danger" data-action="disconnect-youtube">Отключить YouTube</button>`
+                      : `<button class="btn primary" data-action="connect-youtube" ${!s.youtubeOAuthEnabled ? 'title="Добавь YOUTUBE_CLIENT_ID и YOUTUBE_CLIENT_SECRET в .env на сервере"' : ""}>Подключить YouTube</button>`
+                    }
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="pad">
                   <div class="kicker">Аккаунт</div>
                   <h2 class="title">Параметры</h2>
                   <div class="code-token" style="margin-top:16px; white-space:pre-wrap;">${escapeHtml(JSON.stringify({
@@ -1501,6 +1540,8 @@
                     backendStatus: state.settings.backendStatus,
                     aiKey: Boolean(state.settings.openaiApiKey),
                     telegramReady: Boolean(state.settings.telegramBotToken && state.settings.telegramChatId),
+                    instagramReady: Boolean(state.settings.instagramReady),
+                    youtubeConnected: Boolean(state.settings.youtubeConnected),
                     model: state.settings.model
                   }, null, 2))}</div>
                   <div class="actions">
@@ -1512,6 +1553,7 @@
           </section>
         `;
       }
+
 
       function renderLogs() {
         return `
