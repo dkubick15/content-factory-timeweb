@@ -397,6 +397,111 @@
       padding: 18px;
     }
 
+    .hero-steps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .hero-step {
+      flex: 1 1 180px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.055);
+      border-radius: 22px;
+      padding: 14px;
+      min-width: 0;
+    }
+
+    .hero-step b {
+      display: block;
+      font-size: 13px;
+      line-height: 1.25;
+      font-weight: 900;
+    }
+
+    .hero-step span {
+      display: block;
+      margin-top: 6px;
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 1.45;
+      font-weight: 700;
+    }
+
+    .planner-strip {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scroll-snap-type: x mandatory;
+    }
+
+    .calendar-day {
+      flex: 1 0 min(320px, 84vw);
+      scroll-snap-align: start;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: rgba(255,255,255,.052);
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .calendar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .calendar-title {
+      font-size: 15px;
+      font-weight: 900;
+      line-height: 1.2;
+    }
+
+    .calendar-items {
+      display: grid;
+      gap: 9px;
+    }
+
+    .calendar-item {
+      width: 100%;
+      display: block;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.20);
+      color: #fff;
+      text-align: left;
+      border-radius: 18px;
+      padding: 12px;
+      min-width: 0;
+      transition: .18s ease;
+    }
+
+    .calendar-item:hover { border-color: rgba(69,211,255,.32); background: rgba(69,211,255,.08); transform: translateY(-1px); }
+
+    .calendar-time {
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .calendar-copy {
+      margin-top: 5px;
+      font-size: 13px;
+      line-height: 1.35;
+      font-weight: 850;
+    }
+
+    .calendar-meta {
+      margin-top: 7px;
+      color: var(--soft);
+      font-size: 11px;
+      line-height: 1.45;
+      font-weight: 700;
+    }
+
     .manual-ai-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); gap: var(--gap); align-items: start; }
 
     .one-key-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
@@ -606,6 +711,7 @@
       .item-row, .media-card, .queue-card, .project-card { flex-direction: column; }
       .ideas, .auto.mobile-scroll { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; }
       .idea, .auto.mobile-scroll > * { min-width: min(86vw, 360px); scroll-snap-align: start; }
+      .hero-step { flex-basis: min(84vw, 320px); }
       .modal-body { padding: 16px; }
     }
   </style>
@@ -730,13 +836,21 @@
         secretVisible: {},
         settings: {
           model: "",
-          ideaCount: "1",
+          ideaCount: "3",
           style: "острый, экспертный, без воды",
           objective: "заявки",
           openaiApiKey: "",
           telegramBotToken: "",
           telegramChatId: "",
           backendStatus: "не проверен"
+        },
+        planner: {
+          publishDate: "",
+          publishTime: "",
+          placement: "Telegram-канал",
+          goal: "получить заявку",
+          reason: "",
+          formatNote: ""
         },
         projects: [
           {
@@ -764,6 +878,7 @@
       init();
 
       function init() {
+        ensurePlanner();
         renderAuthMode();
         el.authForm.addEventListener("submit", submitAuth);
         el.authModeToggle.addEventListener("click", toggleAuthMode);
@@ -794,6 +909,9 @@
           const parsed = JSON.parse(raw);
           const merged = { ...clone(defaultState), ...parsed };
           merged.settings = { ...clone(defaultState.settings), ...(parsed.settings || {}) };
+          merged.planner = { ...clone(defaultState.planner), ...(parsed.planner || {}) };
+          if (!merged.planner.publishDate) merged.planner.publishDate = todayInputValue();
+          if (!merged.planner.publishTime) merged.planner.publishTime = nextHourInputValue();
           
           merged.settings.openaiApiKey = "";
           merged.settings.telegramBotToken = "";
@@ -958,6 +1076,10 @@
         showToast.timer = setTimeout(() => el.toast.classList.remove("show"), 1800);
       }
 
+      function scrollToTop() {
+        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+      }
+
       function addLog(type, text, meta = "") {
         state.logs.unshift({ id: uid("log"), type, text, meta, time: new Date().toLocaleString("ru-RU") });
         state.logs = state.logs.slice(0, 90);
@@ -965,6 +1087,24 @@
       }
 
       function uid(prefix) { return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`; }
+      function pad2(value) { return String(value).padStart(2, "0"); }
+      function todayInputValue(offset = 0) {
+        const date = new Date();
+        date.setDate(date.getDate() + offset);
+        return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+      }
+      function nextHourInputValue() {
+        const date = new Date();
+        date.setMinutes(date.getMinutes() > 30 ? 0 : 30, 0, 0);
+        if (date.getMinutes() === 0) date.setHours(date.getHours() + 1);
+        return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+      }
+      function ensurePlanner() {
+        if (!state.planner) state.planner = clone(defaultState.planner);
+        if (!state.planner.publishDate) state.planner.publishDate = todayInputValue();
+        if (!state.planner.publishTime) state.planner.publishTime = nextHourInputValue();
+        return state.planner;
+      }
       function escapeHtml(value) {
         return String(value ?? "")
           .replaceAll("&", "&amp;")
@@ -1038,6 +1178,7 @@
       function renderFactory() {
         const project = activeProject();
         const content = selectedContent();
+        const planner = ensurePlanner();
         const lastBad = state.logs.find((log) => log.type === "bad");
         const shouldShowRegionNotice = lastBad?.text?.includes("Timeweb") || lastBad?.text?.includes("API_KEY_INVALID") || lastBad?.text?.includes("ключ");
 
@@ -1045,19 +1186,24 @@
           <section class="grid-hero">
             <div class="panel">
               <div class="pad">
-                <div class="badge">${icons.spark} Активный проект: ${escapeHtml(project.name)}</div>
-                <h1 class="title-xl">Умный конвейер публикаций и сценариев.</h1>
-                <p class="lead">Опиши свой продукт или услугу в брифе ниже, нажми кнопку генерации и выбирай готовые идеи и посты.</p>
+                <div class="badge">${icons.spark} Генерация под Telegram, Reels и Shorts</div>
+                <h1 class="title-xl">Понятный запрос в ИИ. Готовый контент в очередь.</h1>
+                <p class="lead">Заполни короткий бриф: что продвигаем, для кого, зачем и когда публикуем. ИИ соберёт разные материалы под Telegram-канал, Instagram Reels и YouTube Shorts.</p>
+                <div class="hero-steps">
+                  <div class="hero-step"><b>1. Бриф</b><span>продукт, боль, доказательство</span></div>
+                  <div class="hero-step"><b>2. Площадка</b><span>Telegram, Reels или Shorts</span></div>
+                  <div class="hero-step"><b>3. Время</b><span>дата, час и причина публикации</span></div>
+                </div>
                 <div class="actions">
-                  <button class="btn primary" data-action="generate">${icons.spark} Сгенерировать контент</button>
-                  <button class="btn" data-action="tab" data-tab="settings">${icons.key} Настройки AI</button>
+                  <button class="btn primary" data-action="generate">${icons.spark} Сгенерировать</button>
+                  <button class="btn" data-action="tab" data-tab="queue">Открыть календарь</button>
                 </div>
               </div>
             </div>
 
             <div class="stack">
               ${renderMetric(state.ideas.length, "Создано идей", "Текущий набор углов подачи")}
-              ${renderMetric(state.queue.length, "Постов в очереди", "Готово к публикации в Telegram")}
+              ${renderMetric(state.queue.length, "В календаре", "Материалы с датой и временем")}
             </div>
           </section>
 
@@ -1070,27 +1216,33 @@
             <aside class="panel sticky">
               <div class="pad">
                 <div class="kicker">Шаг 1</div>
-                <h2 class="title">1. Твой бриф</h2>
-                <p class="text">Заполни эти простые поля, чтобы ИИ понял уникальность твоего предложения.</p>
+                <h2 class="title">Бриф для нейросети</h2>
+                <p class="text">Коротко укажи смысл, боль и доказательство. Чем конкретнее поля, тем точнее посты и сценарии.</p>
                 <div class="form" style="margin-top:18px;">
-                  ${renderProjectField("name", "Название проекта", project.name, "Например: Кофейня Кофеман")}
-                  ${renderProjectField("niche", "Ниша бизнеса", project.niche, "Например: Кофе с собой и десерты")}
-                  ${renderProjectField("offer", "Твое предложение / Оффер", project.offer, "Например: Каждый 6-й кофе бесплатно при покупке сдобы", true)}
-                  ${renderProjectField("audience", "Целевая аудитория / ЦА", project.audience, "Например: Студенты и офисные сотрудники, спешащие на работу", true)}
-                  ${renderProjectField("pain", "Главная боль клиента", project.pain, "Например: Очереди по утрам, боятся опоздать на учебу или работу", true)}
-                  ${renderProjectField("common", "Что критикуем / разоблачаем", project.common, "Например: Кофейни, которые используют пережаренные старые зерна", true)}
-                  ${renderProjectField("proof", "Твое доказательство", project.proof, "Например: Готовим кофе ровно за 80 секунд или дарим купон на бесплатный круассан", true)}
-                  ${renderProjectField("tone", "Тональность контента", project.tone, "Например: острый, экспертный, с юмором, без воды")}
-                  ${renderProjectField("details", "Фокус / Тема этой генерации (Опционально)", project.details, "Например: рассказать о вреде пережаренных зерен или прогреть к покупке абонемента", true)}
+                  ${renderProjectField("name", "Проект", project.name, "Например: Кофейня Кофеман")}
+                  ${renderProjectField("niche", "Ниша", project.niche, "Например: кофе с собой, ремонт, обучение")}
+                  ${renderProjectField("offer", "Что продаём", project.offer, "Например: абонемент на кофе по будням со скидкой 20%", true)}
+                  ${renderProjectField("audience", "Кому", project.audience, "Например: офисные сотрудники рядом с бизнес-центром", true)}
+                  ${renderProjectField("pain", "Почему человеку это важно", project.pain, "Например: утром нет времени стоять в очереди", true)}
+                  ${renderProjectField("proof", "Факт / доказательство", project.proof, "Например: выдаём напиток за 80 секунд или дарим купон", true)}
+                  ${renderProjectField("common", "Что нельзя писать банально", project.common, "Например: не писать просто про вкусный кофе", true)}
+                  ${renderProjectField("tone", "Тон", project.tone, "Например: коротко, уверенно, без воды")}
+                  ${renderProjectField("details", "Тема на сегодня", project.details, "Например: прогреть к абонементу на неделю", true)}
                   
                   <div style="margin-top: 20px; padding-top: 16px; border-top: 1px dashed rgba(255,255,255,0.12); display: flex; flex-direction: column; gap: var(--gap-sm);">
-                    <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cyan); margin-bottom: 4px;">Параметры генерации</div>
-                    ${renderSettingInput("ideaCount", "Сколько вариантов сделать", state.settings.ideaCount || "1", "Например: 1 или 5")}
-                    ${renderSettingInput("style", "Стиль текста", state.settings.style || "острый, экспертный, без воды", "Например: экспертный")}
-                    ${renderSettingInput("objective", "Цель контента", state.settings.objective || "заявки", "Например: заявки")}
+                    <div style="font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cyan); margin-bottom: 4px;">План публикации</div>
+                    <div class="auto-tight">
+                      ${renderPlannerInput("publishDate", "Дата", planner.publishDate, "", "date")}
+                      ${renderPlannerInput("publishTime", "Время", planner.publishTime, "", "time")}
+                    </div>
+                    ${renderPlannerInput("placement", "Куда публикуем", planner.placement, "Например: Telegram-канал, Shorts, Reels")}
+                    ${renderPlannerInput("goal", "Зачем публикуем", planner.goal, "Например: получить заявку, прогреть, собрать подписки")}
+                    ${renderPlannerInput("reason", "Почему это сработает", planner.reason, "Например: закрываем страх цены перед заявкой")}
+                    ${renderPlannerInput("formatNote", "Особые требования", planner.formatNote, "Например: без юмора, 25 секунд, больше боли")}
+                    ${renderSettingInput("ideaCount", "Сколько вариантов", state.settings.ideaCount || "3", "Например: 3")}
                   </div>
 
-                  <button class="btn primary" data-action="generate" style="margin-top: 12px;">${icons.spark} Сгенерировать</button>
+                  <button class="btn primary" data-action="generate" style="margin-top: 12px;">${icons.spark} Сгенерировать материалы</button>
                 </div>
               </div>
             </aside>
@@ -1146,11 +1298,15 @@
                           ${state.media.map((item) => `<option value="${escapeHtml(item.id)}" ${state.selectedMediaId === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}
                         </select>
                       </label>
+                      <div class="auto-tight">
+                        ${renderPlannerInput("publishDate", "Дата публикации", planner.publishDate, "", "date")}
+                        ${renderPlannerInput("publishTime", "Время", planner.publishTime, "", "time")}
+                      </div>
                     </div>
                     <div class="actions">
                       <button class="btn" data-action="copy-current">${icons.copy} Скопировать пост</button>
                       <button class="btn" data-action="open-generated">Предпросмотр</button>
-                      <button class="btn primary" data-action="add-to-queue">Добавить в очередь публикации</button>
+                      <button class="btn primary" data-action="add-to-queue">Поставить в календарь</button>
                     </div>
                   </div>
                 </div>
@@ -1204,13 +1360,14 @@
                 <div class="row">
                   <div>
                     <div class="kicker">Очередь</div>
-                    <h1 class="title">Материалы к публикации</h1>
-                    <p class="text">Telegram можно публиковать сразу. Instagram и YouTube пока работают как подготовка текста.</p>
+                    <h1 class="title">Календарь публикаций</h1>
+                    <p class="text">Смотри, что выходит сегодня, во сколько, куда и зачем. Telegram можно отправить сразу, Reels и Shorts остаются как готовые сценарии.</p>
                   </div>
                   <button class="btn danger small" data-action="clear-queue">Очистить</button>
                 </div>
               </div>
             </div>
+            ${renderCalendar()}
             <div class="auto mobile-scroll">
               ${state.queue.length ? state.queue.map(renderQueueCard).join("") : renderEmpty("Очередь пустая. Добавь материал из генератора.")}
             </div>
@@ -1369,6 +1526,52 @@
         `;
       }
 
+      function renderCalendar() {
+        const dates = uniqueTexts([
+          todayInputValue(0),
+          todayInputValue(1),
+          todayInputValue(2),
+          ...state.queue.map((item) => item.publishDate || datePart(item.scheduledAt) || todayInputValue())
+        ]).slice(0, 7);
+
+        return `
+          <div class="planner-strip">
+            ${dates.map((date) => renderCalendarDay(date)).join("")}
+          </div>
+        `;
+      }
+
+      function renderCalendarDay(date) {
+        const posts = state.queue
+          .filter((item) => (item.publishDate || datePart(item.scheduledAt) || todayInputValue()) === date)
+          .sort((a, b) => String(a.publishTime || "").localeCompare(String(b.publishTime || "")));
+        const label = date === todayInputValue() ? "Сегодня" : formatDateHuman(date);
+        return `
+          <div class="calendar-day">
+            <div class="calendar-head">
+              <div>
+                <div class="calendar-title">${escapeHtml(label)}</div>
+                <div class="item-sub">${escapeHtml(date)}</div>
+              </div>
+              <span class="chip info">${posts.length} шт.</span>
+            </div>
+            <div class="calendar-items">
+              ${posts.length ? posts.map(renderCalendarItem).join("") : `<div class="empty" style="padding:14px; border-radius:18px;">Свободно</div>`}
+            </div>
+          </div>
+        `;
+      }
+
+      function renderCalendarItem(item) {
+        return `
+          <button class="calendar-item" data-action="open-queue" data-id="${escapeHtml(item.id)}" style="color:#fff; text-align:left;">
+            <div class="calendar-time">${escapeHtml(item.publishTime || "без времени")} · ${escapeHtml(platforms[item.platform]?.name || item.platform)}</div>
+            <div class="calendar-copy">${escapeHtml(shorten(item.title, 72))}</div>
+            <div class="calendar-meta">${escapeHtml(item.goal || "цель не указана")}${item.reason ? " · " + escapeHtml(shorten(item.reason, 70)) : ""}</div>
+          </button>
+        `;
+      }
+
       function renderMetric(value, label, hint) {
         return `<div class="metric"><div class="metric-value">${escapeHtml(value)}</div><div class="metric-label">${escapeHtml(label)}</div><div class="metric-hint">${escapeHtml(hint)}</div></div>`;
       }
@@ -1396,6 +1599,10 @@
 
       function renderSettingInput(name, label, value, placeholder = "") {
         return `<label class="field"><span class="label">${escapeHtml(label)}</span><input class="input" data-action="setting-input" name="${escapeHtml(name)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off" /></label>`;
+      }
+
+      function renderPlannerInput(name, label, value, placeholder = "", type = "text") {
+        return `<label class="field"><span class="label">${escapeHtml(label)}</span><input class="input" type="${escapeHtml(type)}" data-action="planner-input" name="${escapeHtml(name)}" value="${escapeHtml(value || "")}" placeholder="${escapeHtml(placeholder)}" autocomplete="off" /></label>`;
       }
 
       function renderSecretInput(name, label, value, placeholder = "") {
@@ -1463,11 +1670,12 @@
               <div class="row" style="align-items:flex-start;">
                 <div>
                   <div class="item-title">${escapeHtml(item.title)}</div>
-                  <div class="item-sub">${escapeHtml(platforms[item.platform]?.name || item.platform)} · ${escapeHtml(item.state || "Готово")}</div>
+                  <div class="item-sub">${escapeHtml(formatDateHuman(item.publishDate || datePart(item.scheduledAt)))} · ${escapeHtml(item.publishTime || "без времени")} · ${escapeHtml(platforms[item.platform]?.name || item.platform)} · ${escapeHtml(item.state || "Готово")}</div>
                 </div>
                 <span class="chip ${item.state === "Ошибка" ? "bad" : item.state === "Опубликовано" ? "ok" : "info"}">${escapeHtml(item.state || "Готово")}</span>
               </div>
               <div class="item-sub" style="margin-top:10px;">${escapeHtml(shorten(item.body, 170))}</div>
+              <div class="item-sub" style="margin-top:8px;">${escapeHtml(item.goal || "цель не указана")}${item.reason ? " · " + escapeHtml(item.reason) : ""}</div>
               <div class="item-foot">
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
                   <button class="btn small" data-action="open-queue" data-id="${escapeHtml(item.id)}">Открыть</button>
@@ -1502,6 +1710,22 @@
 
       function renderEmpty(text) { return `<div class="empty">${escapeHtml(text)}</div>`; }
       function shorten(text, limit) { const value = String(text || ""); return value.length > limit ? value.slice(0, limit - 1) + "…" : value; }
+      function uniqueTexts(list) {
+        const seen = new Set();
+        return list.filter((item) => {
+          const value = String(item || "").trim();
+          const key = value.toLowerCase();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+      function datePart(value) { return String(value || "").slice(0, 10); }
+      function formatDateHuman(value) {
+        const date = new Date(`${value}T12:00:00`);
+        if (Number.isNaN(date.getTime())) return value || "Без даты";
+        return date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+      }
       function formatBytes(bytes) {
         const n = Number(bytes || 0);
         if (!n) return "0 Б";
@@ -1608,7 +1832,8 @@
             body: {
               project: activeProject(),
               settings: state.settings,
-              platform: state.activePlatform
+              platform: state.activePlatform,
+              planner: ensurePlanner()
             }
           });
 
@@ -1662,8 +1887,13 @@
       }
 
       function addToQueue() {
+        if (!selectedIdea()) {
+          showToast("Сначала сгенерируй идею");
+          return;
+        }
         const content = selectedContent();
         const project = activeProject();
+        const planner = ensurePlanner();
         state.queue.unshift({
           id: uid("q"),
           projectId: project.id,
@@ -1673,13 +1903,21 @@
           tags: content.tags,
           mediaId: state.selectedMediaId || "",
           state: "Готово",
+          publishDate: planner.publishDate || todayInputValue(),
+          publishTime: planner.publishTime || nextHourInputValue(),
+          scheduledAt: `${planner.publishDate || todayInputValue()}T${planner.publishTime || nextHourInputValue()}`,
+          placement: planner.placement || platforms[state.activePlatform]?.name || "",
+          goal: planner.goal || state.settings.objective || "",
+          reason: planner.reason || "",
+          formatNote: planner.formatNote || "",
           lastResponse: "",
           createdAt: new Date().toLocaleString("ru-RU")
         });
-        addLog("ok", "Материал добавлен в очередь: " + content.headline);
-        showToast("Добавлено в очередь");
+        addLog("ok", "Материал поставлен в календарь: " + content.headline);
+        showToast("Поставлено в календарь");
         state.activeTab = "queue";
         render();
+        scrollToTop();
       }
 
       async function publishOne(id) {
@@ -1774,6 +2012,12 @@
                   <label class="field"><span class="label">Заголовок</span><input class="input" id="editQueueTitle" value="${escapeHtml(post.title)}"></label>
                   <label class="field"><span class="label">Текст</span><textarea class="textarea" id="editQueueBody">${escapeHtml(post.body)}</textarea></label>
                   <label class="field"><span class="label">Теги</span><input class="input" id="editQueueTags" value="${escapeHtml(post.tags)}"></label>
+                  <div class="auto-tight">
+                    <label class="field"><span class="label">Дата</span><input class="input" type="date" id="editQueueDate" value="${escapeHtml(post.publishDate || datePart(post.scheduledAt) || todayInputValue())}"></label>
+                    <label class="field"><span class="label">Время</span><input class="input" type="time" id="editQueueTime" value="${escapeHtml(post.publishTime || nextHourInputValue())}"></label>
+                  </div>
+                  <label class="field"><span class="label">Зачем публикуем</span><input class="input" id="editQueueGoal" value="${escapeHtml(post.goal || "")}" placeholder="цель публикации"></label>
+                  <label class="field"><span class="label">Почему сейчас</span><input class="input" id="editQueueReason" value="${escapeHtml(post.reason || "")}" placeholder="логика публикации"></label>
                   <div class="actions">
                     <button class="btn primary" data-action="save-queue-edit" data-id="${escapeHtml(post.id)}">Сохранить</button>
                     <button class="btn" data-action="copy-queue" data-id="${escapeHtml(post.id)}">Скопировать</button>
@@ -1825,7 +2069,7 @@
 
         if (action === "close-modal" && target.dataset.backdrop === "true" && event.target !== target) return;
         if (action === "close-modal") { closeModal(); return; }
-        if (action === "tab") { state.activeTab = target.dataset.tab; closeModal(); render(); if (state.activeTab === "settings") fetchConfig(); return; }
+        if (action === "tab") { state.activeTab = target.dataset.tab; closeModal(); render(); scrollToTop(); if (state.activeTab === "settings") fetchConfig(); return; }
         if (action === "logout") { logout(); return; }
         if (action === "check-backend") { checkBackend(); return; }
         if (action === "save-server-config") { saveServerConfig(); return; }
@@ -1845,7 +2089,7 @@
         if (action === "copy-text") { copyText(target.dataset.text || ""); return; }
         if (action === "publish-one") { publishOne(target.dataset.id); return; }
         if (action === "remove-queue") { state.queue = state.queue.filter((item) => item.id !== target.dataset.id); closeModal(); render(); return; }
-        if (action === "save-queue-edit") { const p = state.queue.find((item) => item.id === target.dataset.id); if (p) { p.title = document.getElementById("editQueueTitle")?.value || p.title; p.body = document.getElementById("editQueueBody")?.value || p.body; p.tags = document.getElementById("editQueueTags")?.value || ""; showToast("Сохранено"); closeModal(); render(); } return; }
+        if (action === "save-queue-edit") { const p = state.queue.find((item) => item.id === target.dataset.id); if (p) { p.title = document.getElementById("editQueueTitle")?.value || p.title; p.body = document.getElementById("editQueueBody")?.value || p.body; p.tags = document.getElementById("editQueueTags")?.value || ""; p.publishDate = document.getElementById("editQueueDate")?.value || p.publishDate || todayInputValue(); p.publishTime = document.getElementById("editQueueTime")?.value || p.publishTime || nextHourInputValue(); p.scheduledAt = `${p.publishDate}T${p.publishTime}`; p.goal = document.getElementById("editQueueGoal")?.value || ""; p.reason = document.getElementById("editQueueReason")?.value || ""; showToast("Сохранено"); closeModal(); render(); } return; }
         if (action === "clear-queue") { if (confirm("Очистить очередь?")) { state.queue = []; render(); } return; }
         if (action === "new-project") { newProject(); return; }
         if (action === "delete-project") { deleteProject(); return; }
@@ -1858,6 +2102,7 @@
         const target = event.target;
         if (target.matches('[data-action="project-input"]')) { activeProject()[target.name] = target.value; saveState(); return; }
         if (target.matches('[data-action="setting-input"]')) { state.settings[target.name] = target.value; saveState(); return; }
+        if (target.matches('[data-action="planner-input"]')) { ensurePlanner()[target.name] = target.value; saveState(); return; }
         if (target.matches('[data-action="edit-content"]')) {
           const idea = selectedIdea();
           const field = target.dataset.field;

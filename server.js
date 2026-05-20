@@ -958,7 +958,7 @@ app.post("/api/generate", requireAuth, async (req, res) => {
       });
     }
 
-    const { project, settings, platform } = req.body || {};
+    const { project, settings, platform, planner } = req.body || {};
     if (!project) {
       return res.status(400).json({
         error: "Не передан project"
@@ -967,9 +967,17 @@ app.post("/api/generate", requireAuth, async (req, res) => {
 
     const ideaCount = Math.max(1, Math.min(Number(settings?.ideaCount || 10), 20));
 
+    const platformLabel = {
+      telegram: "Telegram-канал",
+      instagram: "Instagram Reels",
+      youtube: "YouTube Shorts"
+    }[platform] || "все площадки";
+
     const systemPrompt = [
-      "Ты пишешь короткие продающие идеи для контента на русском.",
-      "Без воды, без англицизмов, без длинного тире.",
+      "Ты контент-стратег и редактор короткого продающего контента на русском.",
+      "Твоя задача - превращать бриф в готовые материалы для Telegram-каналов, Instagram Reels и YouTube Shorts.",
+      "Пиши коротко, конкретно, без воды, без англицизмов, без длинного тире.",
+      "Не придумывай несуществующие факты. Если факта нет, используй аккуратную формулировку без цифр.",
       "Ответ только валидный JSON: начинается с { и заканчивается }."
     ].join(" ");
 
@@ -978,21 +986,33 @@ app.post("/api/generate", requireAuth, async (req, res) => {
       "",
       `Проект: ${project.name || ""}`,
       `Ниша: ${project.niche || ""}`,
-      `Оффер: ${project.offer || ""}`,
+      `Что продвигаем: ${project.offer || ""}`,
       `Аудитория: ${project.audience || ""}`,
-      `Боль: ${project.pain || ""}`,
-      `Что критикуем: ${project.common || ""}`,
-      `Доказательство: ${project.proof || ""}`,
+      `Почему человеку это важно: ${project.pain || ""}`,
+      `Что нельзя писать банально: ${project.common || ""}`,
+      `Факт или доказательство: ${project.proof || ""}`,
       `Тон: ${project.tone || settings?.style || "коротко, по делу"}`,
       `Цель: ${settings?.objective || "заявка"}`,
-      `Фокус: ${project.details || "свободные идеи по брифу"}`,
+      `Тема на сегодня: ${project.details || "свободные идеи по брифу"}`,
+      "",
+      "План публикации:",
+      `Основная площадка сейчас: ${platformLabel}`,
+      `Куда публикуем: ${planner?.placement || platformLabel}`,
+      `Дата: ${planner?.publishDate || ""}`,
+      `Время: ${planner?.publishTime || ""}`,
+      `Зачем публикуем: ${planner?.goal || settings?.objective || ""}`,
+      `Почему это должно сработать: ${planner?.reason || ""}`,
+      `Особые требования: ${planner?.formatNote || ""}`,
       "",
       "Требования:",
       "- title: до 90 символов, сильный хук.",
       "- angle и pillar: коротко.",
-      "- telegram.body: 4-7 коротких строк, боль, факт, вывод, призыв.",
-      "- instagram.body и youtube.body: 3 коротких кадра с таймингом.",
-      "- Не используй слова: уникальный, профессиональный, качественный, индивидуальный подход.",
+      "- telegram.body: готовый пост для канала, 4-7 коротких строк: хук, боль, факт/механика, вывод, мягкий призыв.",
+      "- instagram.body: сценарий Reels на 20-35 секунд: 4-5 кадров с таймингом, что в кадре, текст на экране, голос.",
+      "- youtube.body: сценарий Shorts на 20-35 секунд: хук 0-3 сек, быстрый пример, вывод, призыв.",
+      "- Каждый формат должен быть самостоятельным, а не копией одного текста.",
+      "- Учитывай площадку: Telegram читает, Reels и Shorts смотрят без долгого вступления.",
+      "- Не используй слова: уникальный, профессиональный, качественный, надежный, индивидуальный подход.",
       "- Не используй символ длинного тире.",
       "",
       'Верни строго JSON по схеме: {"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"telegram":{"format":"Пост","headline":"","body":"","tags":""},"instagram":{"format":"Сценарий","headline":"","body":"","tags":""},"youtube":{"format":"Сценарий","headline":"","body":"","tags":""}}}]}'
