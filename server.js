@@ -26,8 +26,67 @@ loadPackedEnvVariable("logi");
 loadPackedEnvVariable("LOGI");
 loadPackedEnvVariable("TIMEWEB_ENV");
 
-function looksLikeJwt(value) {
-  return /^eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+$/.test(String(value || "").trim());
+const APP_BUILD = "2026-05-20-env-autodetect";
+const FALLBACK_TIMEWEB_AGENT_ID = "40f010e8-9dd7-473c-812f-81b65aba981f";
+
+function extractJwt(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/);
+  return match ? match[0] : "";
+}
+
+function extractUuid(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  return match ? match[0] : "";
+}
+
+function resolveTimewebEnv() {
+  const keyNames = ["TIMEWEB_API_KEY", "TIMEWEB_KEY", "logi", "LOGI", "TIMEWEB_ENV", "API_KEY", "KEY"];
+  const agentNames = ["TIMEWEB_AGENT_ID", "TIMEWEB_ENV", "logi", "LOGI", "AGENT_ID"];
+
+  for (const name of keyNames) {
+    const key = extractJwt(process.env[name]);
+    if (key) {
+      const agentFromSameValue = extractUuid(process.env[name]);
+      return {
+        apiKey: key,
+        apiKeySource: name,
+        agentId: extractUuid(process.env.TIMEWEB_AGENT_ID) || agentFromSameValue || FALLBACK_TIMEWEB_AGENT_ID,
+        agentIdSource: process.env.TIMEWEB_AGENT_ID ? "TIMEWEB_AGENT_ID" : agentFromSameValue ? name : "fallback"
+      };
+    }
+  }
+
+  for (const [name, value] of Object.entries(process.env)) {
+    const key = extractJwt(value);
+    if (key) {
+      let agentId = "";
+      let agentIdSource = "";
+
+      for (const agentName of agentNames) {
+        agentId = extractUuid(process.env[agentName]);
+        if (agentId) {
+          agentIdSource = agentName;
+          break;
+        }
+      }
+
+      return {
+        apiKey: key,
+        apiKeySource: name,
+        agentId: agentId || FALLBACK_TIMEWEB_AGENT_ID,
+        agentIdSource: agentIdSource || "fallback"
+      };
+    }
+  }
+
+  return {
+    apiKey: "",
+    apiKeySource: "",
+    agentId: extractUuid(process.env.TIMEWEB_AGENT_ID) || FALLBACK_TIMEWEB_AGENT_ID,
+    agentIdSource: process.env.TIMEWEB_AGENT_ID ? "TIMEWEB_AGENT_ID" : "fallback"
+  };
 }
 
 process.on("uncaughtException", (err) => {
@@ -46,12 +105,9 @@ const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 200);
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 180000);
 const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 8000);
 
-const TIMEWEB_API_KEY =
-  process.env.TIMEWEB_API_KEY ||
-  process.env.TIMEWEB_KEY ||
-  (looksLikeJwt(process.env.logi) ? process.env.logi.trim() : "") ||
-  (looksLikeJwt(process.env.LOGI) ? process.env.LOGI.trim() : "");
-const TIMEWEB_AGENT_ID = process.env.TIMEWEB_AGENT_ID || "40f010e8-9dd7-473c-812f-81b65aba981f";
+const TIMEWEB_ENV = resolveTimewebEnv();
+const TIMEWEB_API_KEY = TIMEWEB_ENV.apiKey;
+const TIMEWEB_AGENT_ID = TIMEWEB_ENV.agentId;
 
 let DATA_DIR = process.env.DATA_DIR;
 
@@ -703,6 +759,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     service: "content-factory-backend",
+    appBuild: APP_BUILD,
     mode: hasTimeweb ? "private-timeweb-agent" : "timeweb-agent-not-configured",
     users: store.users.length,
     maxUploadMb: MAX_UPLOAD_MB,
@@ -710,6 +767,14 @@ app.get("/api/health", (req, res) => {
     provider: "Timeweb Cloud AI Agent",
     timeweb: hasTimeweb,
     agent: hasTimeweb ? TIMEWEB_AGENT_ID : "",
+    env: {
+      keyFound: Boolean(TIMEWEB_API_KEY),
+      keySource: TIMEWEB_ENV.apiKeySource || "",
+      agentFound: Boolean(TIMEWEB_AGENT_ID),
+      agentSource: TIMEWEB_ENV.agentIdSource || "",
+      hasLogi: Boolean(process.env.logi || process.env.LOGI),
+      hasTimewebApiKey: Boolean(process.env.TIMEWEB_API_KEY)
+    },
     node: process.version,
     port: PORT
   });
