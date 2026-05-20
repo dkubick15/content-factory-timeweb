@@ -6,6 +6,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { google } from "googleapis";
 
 dotenv.config();
 dotenv.config({ path: "timeweb-env-ready.env" });
@@ -104,6 +105,10 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 200);
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 180000);
 const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 8000);
+
+// YouTube OAuth2 config (Google Cloud Console)
+const YOUTUBE_CLIENT_ID = process.env.YOUTUBE_CLIENT_ID || "";
+const YOUTUBE_CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET || "";
 
 const TIMEWEB_ENV = resolveTimewebEnv();
 const TIMEWEB_API_KEY = TIMEWEB_ENV.apiKey;
@@ -279,7 +284,13 @@ function defaultUserSettings() {
     openaiApiKeyEnc: "",
     model: DEFAULT_AI_MODEL,
     telegramBotTokenEnc: "",
-    telegramChatId: ""
+    telegramChatId: "",
+    // Instagram Graph API
+    instagramAccessTokenEnc: "",
+    instagramUserId: "",
+    // YouTube OAuth2
+    youtubeRefreshTokenEnc: "",
+    youtubeChannelId: ""
   };
 }
 
@@ -297,7 +308,11 @@ function getUserSettingsForServer(user) {
     openaiApiKey: TIMEWEB_API_KEY,
     model: settings.model || DEFAULT_AI_MODEL,
     telegramBotToken: decryptSecret(settings.telegramBotTokenEnc) || process.env.TELEGRAM_BOT_TOKEN || "",
-    telegramChatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID || ""
+    telegramChatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID || "",
+    instagramAccessToken: decryptSecret(settings.instagramAccessTokenEnc) || "",
+    instagramUserId: settings.instagramUserId || "",
+    youtubeRefreshToken: decryptSecret(settings.youtubeRefreshTokenEnc) || "",
+    youtubeChannelId: settings.youtubeChannelId || ""
   };
 }
 
@@ -314,7 +329,13 @@ function getUserSettingsForClient(user) {
     openaiApiKey: maskKey(serverSettings.openaiApiKey),
     model: serverSettings.model,
     telegramBotToken: maskKey(serverSettings.telegramBotToken),
-    telegramChatId: serverSettings.telegramChatId
+    telegramChatId: serverSettings.telegramChatId,
+    instagramAccessToken: maskKey(serverSettings.instagramAccessToken),
+    instagramUserId: serverSettings.instagramUserId,
+    instagramReady: Boolean(serverSettings.instagramAccessToken && serverSettings.instagramUserId),
+    youtubeConnected: Boolean(serverSettings.youtubeRefreshToken),
+    youtubeChannelId: serverSettings.youtubeChannelId,
+    youtubeOAuthEnabled: Boolean(YOUTUBE_CLIENT_ID && YOUTUBE_CLIENT_SECRET)
   };
 }
 
@@ -866,13 +887,16 @@ app.get("/api/config", requireAuth, (req, res) => {
     user: getPublicUser(req.user),
     openaiReady: Boolean(settings.openaiApiKey),
     telegramReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
+    instagramReady: settings.instagramReady,
+    youtubeConnected: settings.youtubeConnected,
+    youtubeOAuthEnabled: settings.youtubeOAuthEnabled,
     maxUploadMb: MAX_UPLOAD_MB,
     ...settings
   });
 });
 
 app.post("/api/config", requireAuth, (req, res) => {
-  const { telegramBotToken, telegramChatId } = req.body || {};
+  const { telegramBotToken, telegramChatId, instagramAccessToken, instagramUserId } = req.body || {};
 
   try {
     const user = req.store.users.find((item) => item.id === req.user.id);
@@ -892,6 +916,18 @@ app.post("/api/config", requireAuth, (req, res) => {
       user.settings.telegramChatId = String(telegramChatId || "").trim();
     }
 
+    if (instagramAccessToken !== undefined) {
+      const trimmed = String(instagramAccessToken).trim();
+      const isMasked = trimmed.includes("...") || trimmed.includes("***");
+      if (!(isMasked && user.settings.instagramAccessTokenEnc)) {
+        user.settings.instagramAccessTokenEnc = encryptSecret(trimmed);
+      }
+    }
+
+    if (instagramUserId !== undefined) {
+      user.settings.instagramUserId = String(instagramUserId || "").trim();
+    }
+
     user.updatedAt = new Date().toISOString();
     saveStore(req.store);
 
@@ -901,6 +937,9 @@ app.post("/api/config", requireAuth, (req, res) => {
       user: getPublicUser(user),
       openaiReady: Boolean(settings.openaiApiKey),
       telegramReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
+      instagramReady: settings.instagramReady,
+      youtubeConnected: settings.youtubeConnected,
+      youtubeOAuthEnabled: settings.youtubeOAuthEnabled,
       ...settings
     });
   } catch (error) {
@@ -1245,17 +1284,352 @@ app.post("/api/publish/telegram", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/publish/youtube", requireAuth, (req, res) => {
-  res.status(501).json({
-    error: "YouTube ещё не подключён."
+// ─────────────────────────────────────────────────────────────
+// INSTAGRAM PUBLISHING
+// ─────────────────────────────────────────────────────────────
+async function instagramPublishReel(accessToken, userId, videoUrl, caption) {
+  const baseUrl = "https://graph.instagram.com/v19.0";
+
+  // Step 1: Create media container
+  const containerRes = await fetch(`${baseUrl}/${userId}/media`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      media_type: "REELS",
+      video_url: videoUrl,
+      caption: caption.slice(0, 2200),
+      access_token: accessToken
+    })
   });
+  const containerData = await containerRes.json();
+  if (!containerRes.ok || containerData.error) {
+    throw new Error(containerData.error?.message || `Instagram API error (container): ${containerRes.status}`);
+  }
+  const containerId = containerData.id;
+  if (!containerId) throw new Error("Instagram: не получен ID контейнера");
+
+  // Step 2: Poll until FINISHED (max 120s)
+  let ready = false;
+  for (let attempt = 0; attempt < 24; attempt++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const statusRes = await fetch(`${baseUrl}/${containerId}?fields=status_code&access_token=${accessToken}`);
+    const statusData = await statusRes.json();
+    if (statusData.status_code === "FINISHED") { ready = true; break; }
+    if (statusData.status_code === "ERROR") throw new Error("Instagram: ошибка обработки видео на серверах Meta");
+  }
+  if (!ready) throw new Error("Instagram: видео не обработалось за 120 секунд. Попробуй снова.");
+
+  // Step 3: Publish
+  const publishRes = await fetch(`${baseUrl}/${userId}/media_publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ creation_id: containerId, access_token: accessToken })
+  });
+  const publishData = await publishRes.json();
+  if (!publishRes.ok || publishData.error) {
+    throw new Error(publishData.error?.message || `Instagram API error (publish): ${publishRes.status}`);
+  }
+  return publishData;
+}
+
+app.post("/api/publish/instagram", requireAuth, async (req, res) => {
+  try {
+    const userSettings = getUserSettingsForServer(req.user);
+    const { instagramAccessToken, instagramUserId } = userSettings;
+
+    if (!instagramAccessToken || !instagramUserId) {
+      return res.status(400).json({
+        error: "Instagram не подключён. Добавь Access Token и User ID в настройках."
+      });
+    }
+
+    const { post, media } = req.body || {};
+    if (!post) return res.status(400).json({ error: "Не передан post" });
+
+    if (!media?.url || !media.type?.startsWith("video/")) {
+      return res.status(400).json({
+        error: "Для публикации в Instagram Reels нужно видео. Прикрепи видеофайл к посту."
+      });
+    }
+
+    const caption = [post.title, "", post.body, "", post.tags]
+      .filter(Boolean).join("\n").slice(0, 2200);
+
+    const result = await instagramPublishReel(instagramAccessToken, instagramUserId, media.url, caption);
+
+    res.json({ ok: true, instagram: result });
+  } catch (error) {
+    console.error("instagram publish error:", error);
+    res.status(500).json({ error: error.message || "Ошибка публикации в Instagram" });
+  }
 });
 
-app.post("/api/publish/instagram", requireAuth, (req, res) => {
-  res.status(501).json({
-    error: "Instagram ещё не подключён."
+// ─────────────────────────────────────────────────────────────
+// YOUTUBE OAUTH + PUBLISHING
+// ─────────────────────────────────────────────────────────────
+function makeYouTubeOAuth(redirectUri) {
+  return new google.auth.OAuth2(YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, redirectUri);
+}
+
+app.get("/api/auth/youtube", requireAuth, (req, res) => {
+  if (!YOUTUBE_CLIENT_ID || !YOUTUBE_CLIENT_SECRET) {
+    return res.status(400).json({
+      error: "YouTube OAuth не настроен. Добавь YOUTUBE_CLIENT_ID и YOUTUBE_CLIENT_SECRET в .env."
+    });
+  }
+
+  const redirectUri = `${baseUrlFromRequest(req)}/api/auth/youtube/callback`;
+  const oauth2Client = makeYouTubeOAuth(redirectUri);
+
+  // Embed userId in state so callback knows which user to update
+  const state = Buffer.from(JSON.stringify({ userId: req.user.id })).toString("base64url");
+
+  const url = oauth2Client.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: [
+      "https://www.googleapis.com/auth/youtube.upload",
+      "https://www.googleapis.com/auth/youtube.readonly"
+    ],
+    state
   });
+
+  res.redirect(url);
 });
+
+app.get("/api/auth/youtube/callback", async (req, res) => {
+  try {
+    const { code, state, error } = req.query;
+
+    if (error) {
+      return res.send(`<h2>Ошибка: ${String(error)}</h2><p>Закрой эту вкладку и попробуй снова.</p>`);
+    }
+
+    if (!code || !state) {
+      return res.status(400).send("<h2>Нет кода авторизации</h2>");
+    }
+
+    let userId;
+    try {
+      userId = JSON.parse(Buffer.from(String(state), "base64url").toString("utf8")).userId;
+    } catch {
+      return res.status(400).send("<h2>Неверный state</h2>");
+    }
+
+    const redirectUri = `${baseUrlFromRequest(req)}/api/auth/youtube/callback`;
+    const oauth2Client = makeYouTubeOAuth(redirectUri);
+    const { tokens } = await oauth2Client.getToken(String(code));
+
+    if (!tokens.refresh_token) {
+      return res.send("<h2>YouTube не вернул refresh_token.</h2><p>Отзови доступ приложению в настройках Google и попробуй снова.</p>");
+    }
+
+    // Get channel info
+    oauth2Client.setCredentials(tokens);
+    const yt = google.youtube({ version: "v3", auth: oauth2Client });
+    const channelRes = await yt.channels.list({ part: "snippet", mine: true });
+    const channel = channelRes.data.items?.[0];
+
+    const store = loadStore();
+    const user = store.users.find((u) => u.id === userId);
+    if (!user) return res.status(404).send("<h2>Пользователь не найден</h2>");
+
+    user.settings = { ...defaultUserSettings(), ...(user.settings || {}) };
+    user.settings.youtubeRefreshTokenEnc = encryptSecret(tokens.refresh_token);
+    user.settings.youtubeChannelId = channel?.id || "";
+    user.updatedAt = new Date().toISOString();
+    saveStore(store);
+
+    const channelTitle = channel?.snippet?.title || "канал";
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>YouTube подключён</title><style>body{font-family:sans-serif;display:grid;place-items:center;min-height:100vh;background:#0b0d18;color:#fff;margin:0}.card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:24px;padding:32px 40px;text-align:center;max-width:400px}h2{margin:0 0 12px;font-size:24px}p{color:rgba(255,255,255,.7);margin:0 0 20px}button{background:#45d3ff;color:#07101a;border:none;border-radius:12px;padding:12px 24px;font-weight:900;font-size:15px;cursor:pointer}</style></head><body><div class="card"><h2>✅ YouTube подключён</h2><p>Канал: <b>${channelTitle}</b></p><button onclick="window.close()">Закрыть</button></div></body></html>`);
+  } catch (error) {
+    console.error("YouTube OAuth callback error:", error);
+    res.status(500).send(`<h2>Ошибка OAuth: ${String(error.message)}</h2>`);
+  }
+});
+
+app.post("/api/auth/youtube/disconnect", requireAuth, (req, res) => {
+  try {
+    const store = loadStore();
+    const user = store.users.find((u) => u.id === req.user.id);
+    if (!user) return res.status(404).json({ error: "Пользователь не найден" });
+
+    user.settings = { ...defaultUserSettings(), ...(user.settings || {}) };
+    user.settings.youtubeRefreshTokenEnc = "";
+    user.settings.youtubeChannelId = "";
+    user.updatedAt = new Date().toISOString();
+    saveStore(store);
+
+    res.json({ ok: true, youtubeConnected: false });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/publish/youtube", requireAuth, async (req, res) => {
+  try {
+    const userSettings = getUserSettingsForServer(req.user);
+    const { youtubeRefreshToken } = userSettings;
+
+    if (!youtubeRefreshToken) {
+      return res.status(400).json({
+        error: "YouTube не подключён. Нажми \"Подключить YouTube\" в настройках."
+      });
+    }
+
+    if (!YOUTUBE_CLIENT_ID || !YOUTUBE_CLIENT_SECRET) {
+      return res.status(400).json({
+        error: "YouTube OAuth не настроен на сервере. Добавь YOUTUBE_CLIENT_ID и YOUTUBE_CLIENT_SECRET в .env."
+      });
+    }
+
+    const { post, media, scheduledAt } = req.body || {};
+    if (!post) return res.status(400).json({ error: "Не передан post" });
+
+    if (!media?.url || !media.type?.startsWith("video/")) {
+      return res.status(400).json({
+        error: "Для загрузки YouTube Shorts нужно видео. Прикрепи видеофайл к посту."
+      });
+    }
+
+    const oauth2Client = makeYouTubeOAuth("");
+    oauth2Client.setCredentials({ refresh_token: youtubeRefreshToken });
+    const yt = google.youtube({ version: "v3", auth: oauth2Client });
+
+    // Get video file from local uploads
+    const filename = decodeURIComponent(media.url.split("/").pop());
+    const localPath = path.join(uploadsDir, filename);
+
+    if (!fs.existsSync(localPath)) {
+      return res.status(400).json({ error: "Файл не найден на сервере. Загрузи видео через Медиа." });
+    }
+
+    const title = String(post.title || "Видео").slice(0, 100);
+    const description = [post.body, "", post.tags].filter(Boolean).join("\n").slice(0, 5000);
+
+    // If scheduledAt is in the future, set publishAt
+    const publishAt = scheduledAt && new Date(scheduledAt) > new Date()
+      ? new Date(scheduledAt).toISOString()
+      : null;
+
+    const insertRes = await yt.videos.insert({
+      part: ["snippet", "status"],
+      requestBody: {
+        snippet: {
+          title,
+          description,
+          categoryId: "22" // People & Blogs
+        },
+        status: {
+          privacyStatus: "private",
+          ...(publishAt ? { publishAt } : {}),
+          selfDeclaredMadeForKids: false
+        }
+      },
+      media: {
+        body: fs.createReadStream(localPath)
+      }
+    });
+
+    const videoId = insertRes.data.id;
+    res.json({
+      ok: true,
+      youtube: {
+        videoId,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        scheduledAt: publishAt,
+        status: publishAt ? "scheduled" : "uploaded_private"
+      }
+    });
+  } catch (error) {
+    console.error("youtube publish error:", error);
+    const msg = error?.response?.data?.error?.message || error.message || "Ошибка загрузки на YouTube";
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// SCHEDULER — автопостинг из очереди (каждые 60 секунд)
+// ─────────────────────────────────────────────────────────────
+async function runScheduledPublishing() {
+  try {
+    const store = loadStore();
+    const now = new Date();
+
+    for (const user of store.users) {
+      const queue = Array.isArray(user.queue) ? user.queue : [];
+      let changed = false;
+
+      for (const post of queue) {
+        if (post.status !== "scheduled" || !post.scheduledAt) continue;
+        const postTime = new Date(post.scheduledAt);
+        if (postTime > now) continue; // Not yet time
+
+        const platform = post.platform || "telegram";
+        const userSettings = getUserSettingsForServer(user);
+
+        try {
+          if (platform === "telegram") {
+            const { telegramBotToken, telegramChatId } = userSettings;
+            if (!telegramBotToken || !telegramChatId) { post.status = "error"; post.lastError = "Telegram не настроен"; changed = true; continue; }
+
+            const text = [post.title, "", post.body, "", post.tags].filter(Boolean).join("\n").slice(0, 4096);
+            await telegramCall("sendMessage", { chat_id: telegramChatId, text }, telegramBotToken);
+            post.status = "published"; post.publishedAt = new Date().toISOString();
+
+          } else if (platform === "instagram") {
+            const { instagramAccessToken, instagramUserId } = userSettings;
+            if (!instagramAccessToken || !instagramUserId) { post.status = "error"; post.lastError = "Instagram не настроен"; changed = true; continue; }
+            if (!post.mediaUrl || !post.mediaType?.startsWith("video/")) { post.status = "error"; post.lastError = "Нет видео для Instagram Reels"; changed = true; continue; }
+
+            const caption = [post.title, "", post.body, "", post.tags].filter(Boolean).join("\n").slice(0, 2200);
+            await instagramPublishReel(instagramAccessToken, instagramUserId, post.mediaUrl, caption);
+            post.status = "published"; post.publishedAt = new Date().toISOString();
+
+          } else if (platform === "youtube") {
+            const { youtubeRefreshToken } = userSettings;
+            if (!youtubeRefreshToken || !YOUTUBE_CLIENT_ID || !YOUTUBE_CLIENT_SECRET) { post.status = "error"; post.lastError = "YouTube не настроен"; changed = true; continue; }
+            if (!post.mediaUrl || !post.mediaType?.startsWith("video/")) { post.status = "error"; post.lastError = "Нет видео для YouTube Shorts"; changed = true; continue; }
+
+            const oauth2Client = makeYouTubeOAuth("");
+            oauth2Client.setCredentials({ refresh_token: youtubeRefreshToken });
+            const yt = google.youtube({ version: "v3", auth: oauth2Client });
+
+            const filename = decodeURIComponent(post.mediaUrl.split("/").pop());
+            const localPath = path.join(uploadsDir, filename);
+            if (!fs.existsSync(localPath)) { post.status = "error"; post.lastError = "Файл не найден"; changed = true; continue; }
+
+            await yt.videos.insert({
+              part: ["snippet", "status"],
+              requestBody: {
+                snippet: { title: String(post.title || "Видео").slice(0, 100), description: String(post.body || "").slice(0, 5000), categoryId: "22" },
+                status: { privacyStatus: "public", selfDeclaredMadeForKids: false }
+              },
+              media: { body: fs.createReadStream(localPath) }
+            });
+            post.status = "published"; post.publishedAt = new Date().toISOString();
+          }
+
+          changed = true;
+          console.log(`[Scheduler] ${platform} published for user ${user.email}: ${post.title}`);
+        } catch (pubErr) {
+          post.status = "error";
+          post.lastError = String(pubErr.message || "Ошибка публикации");
+          changed = true;
+          console.error(`[Scheduler] ${platform} error for user ${user.email}:`, pubErr.message);
+        }
+      }
+
+      if (changed) {
+        user.queue = queue;
+      }
+    }
+
+    saveStore(store);
+  } catch (err) {
+    console.error("[Scheduler] Ошибка планировщика:", err.message);
+  }
+}
 
 const distPath = path.join(__dirname, "dist");
 if (fs.existsSync(distPath)) {
@@ -1305,4 +1679,8 @@ function seedKubikUser() {
 app.listen(PORT, "0.0.0.0", () => {
   seedKubikUser();
   console.log(`Content Factory backend started on port ${PORT}`);
+
+  // Запускаем планировщик автопостинга каждые 60 секунд
+  setInterval(runScheduledPublishing, 60 * 1000);
+  console.log("[Scheduler] Планировщик автопостинга запущен (интервал: 60 сек)");
 });

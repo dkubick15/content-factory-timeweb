@@ -842,6 +842,12 @@
           openaiApiKey: "",
           telegramBotToken: "",
           telegramChatId: "",
+          instagramAccessToken: "",
+          instagramUserId: "",
+          instagramReady: false,
+          youtubeConnected: false,
+          youtubeChannelId: "",
+          youtubeOAuthEnabled: false,
           backendStatus: "не проверен"
         },
         planner: {
@@ -1758,6 +1764,14 @@
           state.settings.telegramBotToken = data.telegramBotToken || state.settings.telegramBotToken || "";
           state.settings.telegramChatId = data.telegramChatId ?? state.settings.telegramChatId;
           state.settings.model = data.model || state.settings.model || "";
+          // Instagram
+          state.settings.instagramAccessToken = data.instagramAccessToken || state.settings.instagramAccessToken || "";
+          state.settings.instagramUserId = data.instagramUserId ?? state.settings.instagramUserId ?? "";
+          state.settings.instagramReady = Boolean(data.instagramReady);
+          // YouTube
+          state.settings.youtubeConnected = Boolean(data.youtubeConnected);
+          state.settings.youtubeChannelId = data.youtubeChannelId ?? state.settings.youtubeChannelId ?? "";
+          state.settings.youtubeOAuthEnabled = Boolean(data.youtubeOAuthEnabled);
           render();
         } catch (error) {
           addLog("warn", "Не удалось получить настройки аккаунта: " + error.message);
@@ -1779,6 +1793,57 @@
         } catch (error) {
           addLog("bad", "Ошибка сохранения настроек: " + error.message);
           showToast("Ошибка сохранения");
+        } finally {
+          setBusy(false);
+          render();
+        }
+      }
+
+      async function saveInstagramConfig() {
+        setBusy(true);
+        try {
+          const body = {
+            instagramAccessToken: state.settings.instagramAccessToken || "",
+            instagramUserId: state.settings.instagramUserId || ""
+          };
+          const data = await request("/api/config", { method: "POST", body });
+          addLog("ok", "Instagram настройки сохранены.", JSON.stringify(data, null, 2));
+          showToast(data.instagramReady ? "Instagram подключён" : "Instagram настройки сохранены");
+          await fetchConfig();
+        } catch (error) {
+          addLog("bad", "Ошибка сохранения Instagram: " + error.message);
+          showToast("Ошибка сохранения");
+        } finally {
+          setBusy(false);
+          render();
+        }
+      }
+
+      function connectYouTube() {
+        const popup = window.open("/api/auth/youtube", "youtube_oauth", "width=520,height=680,scrollbars=yes");
+        if (!popup) { showToast("Разреши всплывающие окна в браузере"); return; }
+        // Poll for popup close then refresh config
+        const timer = setInterval(async () => {
+          if (popup.closed) {
+            clearInterval(timer);
+            showToast("Обновляю статус YouTube...");
+            await fetchConfig();
+            render();
+          }
+        }, 800);
+      }
+
+      async function disconnectYouTube() {
+        if (!confirm("Отключить YouTube? Автопостинг через этот канал остановится.")) return;
+        setBusy(true);
+        try {
+          await request("/api/auth/youtube/disconnect", { method: "POST" });
+          showToast("YouTube отключён");
+          addLog("ok", "YouTube канал отключён.");
+          await fetchConfig();
+        } catch (error) {
+          addLog("bad", "Ошибка отключения YouTube: " + error.message);
+          showToast("Ошибка");
         } finally {
           setBusy(false);
           render();
@@ -2095,6 +2160,9 @@
         if (action === "delete-project") { deleteProject(); return; }
         if (action === "select-project") { state.activeProjectId = target.dataset.id; render(); return; }
         if (action === "clear-logs") { state.logs = []; render(); return; }
+        if (action === "save-instagram-config") { saveInstagramConfig(); return; }
+        if (action === "connect-youtube") { connectYouTube(); return; }
+        if (action === "disconnect-youtube") { disconnectYouTube(); return; }
         if (action === "toggle-secret") { state.secretVisible[target.dataset.field] = !state.secretVisible[target.dataset.field]; render(); return; }
       });
 
