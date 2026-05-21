@@ -8,34 +8,34 @@
   <meta name="description" content="Контент-завод: AI-генерация идей, медиа, очередь и публикация в Telegram." />
 
   <style>
-    @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;600;700;800&display=swap");
+    @import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Bricolage+Grotesque:wght@500;600;700;800&display=swap");
 
     :root {
       color-scheme: dark;
-      --bg: #07070c;
-      --bg-2: #0d1020;
-      --bg-3: #12152a;
-      --panel: rgba(255, 255, 255, .075);
-      --panel-2: rgba(255, 255, 255, .105);
-      --glass: rgba(12, 14, 27, .74);
-      --line: rgba(255, 255, 255, .12);
-      --line-strong: rgba(255, 255, 255, .22);
-      --text: rgba(255, 255, 255, .94);
-      --muted: rgba(255, 255, 255, .64);
-      --soft: rgba(255, 255, 255, .43);
-      --white: #fff;
-      --black: #07070c;
-      --blue: #7c5cff;
-      --cyan: #35d7ff;
-      --green: #56f0a9;
-      --yellow: #ffd572;
-      --red: #ff4e78;
-      --orange: #ff9d42;
-      --radius: 30px;
-      --radius-sm: 18px;
-      --shadow: 0 28px 80px rgba(0, 0, 0, .42);
-      --font: "Manrope", Inter, Arial, sans-serif;
-      --font-display: "Unbounded", "Manrope", Arial, sans-serif;
+      --bg: #0b0c10;
+      --bg-2: #14151a;
+      --bg-3: #1f2029;
+      --panel: #14151a;
+      --panel-2: #1f2029;
+      --glass: #14151a;
+      --line: #2e2f38;
+      --line-strong: #424452;
+      --text: #e2e4ed;
+      --muted: #9496a8;
+      --soft: #67697b;
+      --white: #ffffff;
+      --black: #0b0c10;
+      --blue: #3b82f6;
+      --cyan: #06b6d4;
+      --green: #10b981;
+      --yellow: #f59e0b;
+      --red: #ef4444;
+      --orange: #f97316;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      --font: "Plus Jakarta Sans", Arial, sans-serif;
+      --font-display: "Bricolage Grotesque", "Plus Jakarta Sans", Arial, sans-serif;
       --container: 1520px;
       --pad: clamp(18px, 2.2vw, 34px);
       --gap: clamp(14px, 1.45vw, 24px);
@@ -53,37 +53,7 @@
       color: var(--text);
       font-family: var(--font);
       overflow-x: hidden;
-      background:
-        radial-gradient(circle at 9% 8%, rgba(124, 92, 255, .24), transparent 34%),
-        radial-gradient(circle at 80% 10%, rgba(53, 215, 255, .16), transparent 30%),
-        radial-gradient(circle at 55% 92%, rgba(255, 157, 66, .10), transparent 40%),
-        linear-gradient(140deg, #07070c 0%, #090a13 38%, #101329 74%, #07070c 100%);
-    }
-
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      background:
-        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
-      background-size: 46px 46px;
-      mask-image: linear-gradient(180deg, rgba(0,0,0,.88), rgba(0,0,0,.24));
-      opacity: .42;
-    }
-
-    body::after {
-      content: "";
-      position: fixed;
-      inset: auto -12vw -22vh auto;
-      width: 54vw;
-      height: 54vw;
-      z-index: 0;
-      pointer-events: none;
-      background: radial-gradient(circle, rgba(124, 92, 255, .16), transparent 60%);
-      filter: blur(8px);
+      background: var(--bg);
     }
 
     button, input, textarea, select { font: inherit; }
@@ -103,42 +73,60 @@
     .auth {
       min-height: 100vh;
       display: grid;
-      place-items: center;
-      padding: 22px;
+      grid-template-columns: 1.2fr 1fr;
+      align-items: center;
+      gap: 60px;
+      padding: clamp(24px, 5vw, 60px);
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .landing-hero {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .hero-title {
+      font-family: var(--font-display);
+      font-size: clamp(42px, 5vw, 76px);
+      font-weight: 700;
+      line-height: 1.05;
+      margin: 0 0 24px 0;
+      letter-spacing: -0.04em;
+    }
+    .hero-title .accent {
+      color: var(--blue);
+      position: relative;
+      display: inline-block;
+    }
+    .hero-subtitle {
+      font-size: clamp(16px, 1.5vw, 20px);
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 540px;
+      margin: 0;
+    }
+    @media (max-width: 900px) {
+      .auth { grid-template-columns: 1fr; text-align: center; justify-items: center; gap: 40px; padding-top: 80px; }
+      .landing-hero { align-items: center; }
     }
 
     .auth-card, .panel, .mini-panel, .modal-card {
       border: 1px solid var(--line);
-      background:
-        linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.035)),
-        rgba(11, 13, 25, .72);
-      backdrop-filter: blur(22px);
-      box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.07);
+      background: var(--panel);
+      box-shadow: var(--shadow);
       border-radius: var(--radius);
       min-width: 0;
       overflow: hidden;
       transition: border-color var(--fast), background var(--fast), transform var(--fast), box-shadow var(--fast);
     }
 
-    .panel:hover, .mini-panel:hover { border-color: rgba(255,255,255,.18); }
+    .panel:hover, .mini-panel:hover { border-color: var(--line-strong); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6); }
 
     .auth-card {
       width: min(560px, 100%);
-      padding: clamp(24px, 4vw, 48px);
+      padding: clamp(32px, 5vw, 64px);
       position: relative;
-      background:
-        radial-gradient(circle at 0 0, rgba(124,92,255,.30), transparent 42%),
-        radial-gradient(circle at 100% 0, rgba(53,215,255,.16), transparent 38%),
-        rgba(12,14,28,.82);
-    }
-
-    .auth-card::after {
-      content: "";
-      position: absolute;
-      inset: 12px;
-      border: 1px solid rgba(255,255,255,.08);
-      border-radius: calc(var(--radius) - 10px);
-      pointer-events: none;
+      background: var(--panel);
     }
 
     .app { display: none; }
@@ -315,25 +303,26 @@
       gap: 8px;
       min-height: 48px;
       max-width: 100%;
-      padding: 13px 17px;
-      border: 1px solid var(--line);
-      border-radius: 17px;
-      background: rgba(255,255,255,.075);
-      color: #fff;
-      font-size: 14px;
-      font-weight: 900;
+      padding: 12px 24px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: var(--bg-2);
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 600;
       text-decoration: none;
       line-height: 1.15;
       text-align: center;
       white-space: normal;
       min-width: 0;
       user-select: none;
-      transition: .2s ease;
+      transition: all var(--fast);
     }
-    .btn:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.12); }
-    .btn.primary { border-color: rgba(53,215,255,.45); background: linear-gradient(135deg, #7c5cff, #35d7ff); box-shadow: 0 16px 40px rgba(124,92,255,.28); color: #fff; }
-    .btn.green { border-color: rgba(86,240,169,.32); background: rgba(86,240,169,.13); color: #d6ffec; }
-    .btn.danger { border-color: rgba(255,78,120,.32); background: rgba(255,78,120,.14); color: #ffd8df; }
+    .btn:hover { transform: translateY(-1px); border-color: var(--soft); background: var(--bg-3); }
+    .btn.primary { border-color: var(--white); background: var(--white); box-shadow: none; color: var(--black); font-weight: 700; }
+    .btn.primary:hover { background: #e2e4ed; border-color: #e2e4ed; opacity: 0.95; }
+    .btn.green { border-color: rgba(16,185,129,.32); background: rgba(16,185,129,.13); color: var(--green); }
+    .btn.danger { border-color: rgba(239,68,68,.32); background: rgba(239,68,68,.14); color: var(--red); }
     .btn.small { min-height: 38px; padding: 9px 12px; border-radius: 14px; font-size: 12px; }
     .btn.icon-only { width: 42px; min-height: 42px; padding: 0; border-radius: 15px; flex: 0 0 auto; }
 
@@ -344,19 +333,19 @@
     .input, .textarea, .select {
       width: 100%;
       min-width: 0;
-      border: 1px solid rgba(255,255,255,.11);
-      border-radius: 18px;
-      background: rgba(255,255,255,.055);
-      color: #fff;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      color: var(--text);
       outline: none;
-      padding: 13px 14px;
-      font-size: 14px;
-      font-weight: 700;
-      line-height: 1.35;
-      transition: .18s ease;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+      padding: 14px 16px;
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.4;
+      transition: all var(--fast);
+      box-shadow: none;
     }
-    .textarea { min-height: 150px; resize: vertical; line-height: 1.62; }
+    .textarea { min-height: 140px; resize: vertical; line-height: 1.6; }
     .select {
       appearance: none;
       background-image: linear-gradient(45deg, transparent 50%, rgba(255,255,255,.65) 50%), linear-gradient(135deg, rgba(255,255,255,.65) 50%, transparent 50%);
@@ -365,9 +354,9 @@
       background-repeat: no-repeat;
       padding-right: 38px;
     }
-    .input:hover, .textarea:hover, .select:hover { border-color: rgba(255,255,255,.24); background: rgba(255,255,255,.075); }
-    .input:focus, .textarea:focus, .select:focus { border-color: rgba(53,215,255,.55); box-shadow: 0 0 0 4px rgba(53,215,255,.08); background: rgba(0,0,0,.22); }
-    .input::placeholder, .textarea::placeholder { color: rgba(255,255,255,.32); }
+    .input:hover, .textarea:hover, .select:hover { border-color: var(--soft); background: var(--bg-2); }
+    .input:focus, .textarea:focus, .select:focus { border-color: var(--white); box-shadow: 0 0 0 1px var(--white); background: var(--bg); }
+    .input::placeholder, .textarea::placeholder { color: var(--muted); }
 
     .password-wrap { position: relative; display: flex; align-items: center; min-width: 0; }
     .password-wrap .input { padding-right: 52px; }
@@ -1562,10 +1551,14 @@
   <div class="loading-line" id="loadingLine"></div>
 
   <section class="auth" id="authScreen">
+    <div class="landing-hero">
+      <h1 class="hero-title">Умножайте <span class="accent">ROI</span> <br/>вашего контента</h1>
+      <p class="hero-subtitle">Профессиональный AI-ассистент для маркетологов, агентств и SaaS. Генерируйте посты, сценарии Reels и управляйте контентом в пару кликов.</p>
+    </div>
+
     <div class="auth-card">
-      <div class="kicker">Личный аккаунт</div>
-      <h1 class="auth-title">Контент-завод</h1>
-      <p class="auth-text" id="authText">Войди в аккаунт для доступа к инструментам генерации.</p>
+      <h2 class="auth-title" style="font-size: 28px; margin-bottom: 8px;">Вход в платформу</h2>
+      <p class="auth-text" id="authText" style="margin-bottom: 32px;">Войдите для доступа к генератору контента.</p>
 
       <form class="form" id="authForm">
         <label class="field">
