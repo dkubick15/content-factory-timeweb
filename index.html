@@ -1500,6 +1500,60 @@
       .sheet-grid { min-width: 680px; }
       .sheet-cell { padding: 12px; }
     }
+    .generation-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(7, 7, 12, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .generation-overlay.show {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .generation-overlay-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 40px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 32px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+    .generation-spinner {
+      width: 60px;
+      height: 60px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--cyan);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 24px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .generation-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      margin: 0 0 8px 0;
+    }
+    .generation-text {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+      margin: 0;
+    }
   </style>
 
 </head>
@@ -1550,6 +1604,15 @@
   </div>
 
   <div class="modal-root" id="modalRoot"></div>
+
+  <div class="generation-overlay" id="generationOverlay">
+    <div class="generation-overlay-content">
+      <div class="generation-spinner"></div>
+      <h2 class="generation-title">Генерация в процессе</h2>
+      <p class="generation-text" id="generationText">Отправляем бриф нейросети...</p>
+    </div>
+  </div>
+
   <div class="toast" id="toast">Готово</div>
 
   <script>
@@ -1574,7 +1637,9 @@
         modalRoot: document.getElementById("modalRoot"),
         toast: document.getElementById("toast"),
         loadingLine: document.getElementById("loadingLine"),
-        accountPill: document.getElementById("accountPill")
+        accountPill: document.getElementById("accountPill"),
+        generationOverlay: document.getElementById("generationOverlay"),
+        generationText: document.getElementById("generationText")
       };
 
       const icons = {
@@ -1854,6 +1919,35 @@
           if (button.dataset.allowDuringBusy === "true") return;
           button.disabled = state.busy;
         });
+      }
+
+      let generationInterval;
+      const generationPhrases = [
+        "Отправляем бриф нейросети...",
+        "Анализируем данные...",
+        "Продумываем сильный хук...",
+        "Пишем тексты и сценарии...",
+        "Ещё немного, процесс объёмный...",
+        "Форматируем результаты...",
+        "Почти готово..."
+      ];
+
+      function showGenerationOverlay() {
+        el.generationOverlay.classList.add("show");
+        let step = 0;
+        el.generationText.textContent = generationPhrases[0];
+        clearInterval(generationInterval);
+        generationInterval = setInterval(() => {
+          step++;
+          if (step < generationPhrases.length) {
+            el.generationText.textContent = generationPhrases[step];
+          }
+        }, 5000);
+      }
+
+      function hideGenerationOverlay() {
+        el.generationOverlay.classList.remove("show");
+        clearInterval(generationInterval);
       }
 
       function showToast(text) {
@@ -2786,6 +2880,7 @@ function renderMedia() {
         }
 
         setBusy(true);
+        showGenerationOverlay();
         showToast("Запрос к ИИ-серверу...");
         try {
           const data = await request("/api/generate", {
@@ -2818,6 +2913,7 @@ function renderMedia() {
             openModal("Ошибка генерации", message, `<div class="actions"><button class="btn primary" data-action="close-modal">Закрыть</button><button class="btn" data-action="tab" data-tab="logs">Журнал</button></div>`);
           }
         } finally {
+          hideGenerationOverlay();
           setBusy(false);
           render();
         }
