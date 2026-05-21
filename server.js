@@ -178,9 +178,19 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(uploadsDir));
 
-for (const iconFile of ["favicon.png", "favicon-32x32.png", "favicon-16x16.png", "apple-touch-icon.png"]) {
+for (const iconFile of [
+  "favicon.ico",
+  "favicon.png",
+  "favicon-32x32.png",
+  "favicon-16x16.png",
+  "apple-touch-icon.png",
+  "favicon-v2.png",
+  "favicon-v2-32x32.png",
+  "favicon-v2-16x16.png",
+  "apple-touch-icon-v2.png"
+]) {
   app.get(`/${iconFile}`, (req, res) => {
-    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(path.join(__dirname, iconFile));
   });
 }
