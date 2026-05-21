@@ -1819,7 +1819,7 @@
         if (!options.public) headers.Authorization = "Bearer " + token();
 
         const controller = new AbortController();
-        const timeoutMs = options.timeoutMs || (path === "/api/generate" ? 180000 : 30000);
+        const timeoutMs = options.timeoutMs || (path === "/api/generate" ? 300000 : 30000);
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
         let response;

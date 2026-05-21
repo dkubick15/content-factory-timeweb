@@ -103,7 +103,7 @@ const PORT = process.env.PORT || 3000;
 const DEFAULT_AI_MODEL = process.env.DEFAULT_MODEL || process.env.DEFAULT_AI_MODEL || "timeweb-agent";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 200);
-const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 180000);
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 300000);
 const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 8000);
 
 // YouTube OAuth2 config (Google Cloud Console)
