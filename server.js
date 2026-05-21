@@ -879,6 +879,33 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
   });
 });
 
+app.get("/api/workspace", requireAuth, (req, res) => {
+  res.json({
+    ok: true,
+    projects: req.user.projects || [],
+    ideas: req.user.ideas || [],
+    queue: req.user.queue || []
+  });
+});
+
+app.post("/api/workspace", requireAuth, (req, res) => {
+  try {
+    const store = loadStore();
+    const user = store.users.find((u) => u.id === req.user.id);
+    if (!user) return res.status(404).json({ error: "Пользователь не найден" });
+
+    user.projects = req.body.projects || user.projects || [];
+    user.ideas = req.body.ideas || user.ideas || [];
+    user.queue = req.body.queue || user.queue || [];
+    user.updatedAt = new Date().toISOString();
+    
+    saveStore(store);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: "Ошибка сохранения рабочего пространства" });
+  }
+});
+
 app.get("/api/config", requireAuth, (req, res) => {
   const settings = getUserSettingsForClient(req.user);
 
