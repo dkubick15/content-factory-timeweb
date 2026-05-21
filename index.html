@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Контент-завод</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
   <meta name="description" content="Контент-завод: AI-генерация идей, медиа, очередь и публикация в Telegram." />
 
   <style>
@@ -1648,13 +1649,7 @@
           {
             id: "p_1",
             name: "Новый проект",
-            niche: "",
-            offer: "",
-            audience: "",
-            pain: "",
-            common: "",
-            proof: "",
-            tone: "",
+            briefText: "",
             status: "активный"
           }
         ],
@@ -2035,15 +2030,12 @@
                 </div>
 
                 <div class="form">
-                  ${renderProjectField("name", "Проект", project.name, "Например: Кофейня Кофеман")}
-                  ${renderProjectField("niche", "Ниша", project.niche, "Например: кофе с собой, ремонт, обучение")}
-                  ${renderProjectField("offer", "Что продаём", project.offer, "Например: абонемент на кофе по будням со скидкой 20%", true)}
-                  ${renderProjectField("audience", "Кому", project.audience, "Например: офисные сотрудники рядом с бизнес-центром", true)}
-                  ${renderProjectField("pain", "Почему человеку это важно", project.pain, "Например: утром нет времени стоять в очереди", true)}
-                  ${renderProjectField("proof", "Факт / доказательство", project.proof, "Например: выдаём напиток за 80 секунд или дарим купон", true)}
-                  ${renderProjectField("common", "Что нельзя писать банально", project.common, "Например: не писать просто про вкусный кофе", true)}
-                  ${renderProjectField("tone", "Тон", project.tone, "Например: коротко, уверенно, без воды")}
-                  ${renderProjectField("details", "Тема на сегодня", project.details, "Например: прогреть к абонементу на неделю", true)}
+                  ${renderProjectField("name", "Название проекта", project.name, "Например: Кофейня Кофеман")}
+                  <label class="field" style="margin-top: 12px;">
+                    <span class="label">Нейро-бриф</span>
+                    <textarea class="textarea" data-action="project-input" name="briefText" placeholder="Вставь сюда заполненный бриф из нейросети..." autocomplete="off" rows="8" style="resize: vertical; min-height: 180px;">${escapeHtml(project.briefText || "")}</textarea>
+                  </label>
+                  <button class="btn" data-action="copy-brief-template" style="margin-top: 8px; margin-bottom: 16px;">${icons.copy} Скопировать шаблон брифа</button>
 
                   <div class="plan-box">
                     <div class="plan-title">План публикации</div>
@@ -2229,13 +2221,10 @@ function renderMedia() {
                 <p class="lead">${escapeHtml(project.offer)}</p>
                 <div class="form" style="margin-top:26px;">
                   ${renderProjectInput("name", "Проект", project.name)}
-                  ${renderProjectInput("niche", "Ниша", project.niche)}
-                  ${renderProjectInput("offer", "Оффер", project.offer)}
-                  ${renderProjectInput("audience", "Аудитория", project.audience)}
-                  ${renderProjectInput("pain", "Главная боль", project.pain)}
-                  ${renderProjectInput("common", "Что разбираем", project.common)}
-                  ${renderProjectInput("proof", "Механизм / доказательство", project.proof)}
-                  ${renderProjectInput("tone", "Тон", project.tone)}
+                  <label class="field" style="margin-top: 12px;">
+                    <span class="label">Нейро-бриф</span>
+                    <textarea class="textarea" data-action="project-input" name="briefText" placeholder="Заполненный бриф..." autocomplete="off" rows="8" style="resize: vertical; min-height: 180px;">${escapeHtml(project.briefText || "")}</textarea>
+                  </label>
                   <button class="btn primary" data-action="tab" data-tab="factory">Перейти к генерации</button>
                 </div>
               </div>
@@ -3198,6 +3187,10 @@ function renderMedia() {
         if (action === "copy-current") { const c = selectedContent(); copyText([c.headline, "", c.body, "", c.tags].filter(Boolean).join("\n")); return; }
         if (action === "copy-queue") { const p = state.queue.find((item) => item.id === target.dataset.id); if (p) copyText([p.title, "", p.body, "", p.tags].filter(Boolean).join("\n")); return; }
         if (action === "copy-text") { copyText(target.dataset.text || ""); return; }
+        if (action === "copy-brief-template") { 
+          copyText("Привет! Выступи в роли контент-маркетолога. Заполни бриф для проекта по следующим пунктам:\\n\\n1. Проект:\\n2. Ниша:\\n3. Что продаем (оффер):\\n4. Аудитория:\\n5. Главная боль:\\n6. Доказательство / факт:\\n7. Что нельзя писать банально:\\n8. Тон (например, коротко и экспертно):");
+          return;
+        }
         if (action === "publish-one") { publishOne(target.dataset.id); return; }
         if (action === "remove-queue") { state.queue = state.queue.filter((item) => item.id !== target.dataset.id); closeModal(); render(); return; }
         if (action === "save-queue-edit") { const p = state.queue.find((item) => item.id === target.dataset.id); if (p) { p.title = document.getElementById("editQueueTitle")?.value || p.title; p.body = document.getElementById("editQueueBody")?.value || p.body; p.tags = document.getElementById("editQueueTags")?.value || ""; p.publishDate = document.getElementById("editQueueDate")?.value || p.publishDate || todayInputValue(); p.publishTime = document.getElementById("editQueueTime")?.value || p.publishTime || nextHourInputValue(); p.scheduledAt = `${p.publishDate}T${p.publishTime}`; p.goal = document.getElementById("editQueueGoal")?.value || ""; p.reason = document.getElementById("editQueueReason")?.value || ""; const picker = document.getElementById("modalPlacementPicker"); if (picker) { const chosen = picker.dataset.value || "Telegram"; const keyMap = { Telegram: "telegram", Instagram: "instagram", YouTube: "youtube" }; p.platform = keyMap[chosen] || p.platform; p.placement = chosen; } showToast("Сохранено"); closeModal(); render(); } return; }
