@@ -106,6 +106,11 @@ const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 200);
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 300000);
 const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 8000);
 const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN !== "false";
+const DEMO_EMAIL = process.env.DEMO_EMAIL || "kubik";
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "kubik";
+const CLIENT_DEMO_EMAIL = process.env.CLIENT_DEMO_EMAIL || "client";
+const CLIENT_DEMO_PASSWORD = process.env.CLIENT_DEMO_PASSWORD || "client123";
+const CLIENT_SHARED_WORKSPACE = process.env.CLIENT_SHARED_WORKSPACE !== "false";
 
 // YouTube OAuth2 config (Google Cloud Console)
 const YOUTUBE_CLIENT_ID = process.env.YOUTUBE_CLIENT_ID || "";
@@ -546,6 +551,20 @@ function requireAuth(req, res, next) {
 
   req.user = user;
   req.store = store;
+
+  // Редирект рабочего пространства для гостевого/клиентского входа
+  const isClient = user.email === CLIENT_DEMO_EMAIL;
+  if (isClient && CLIENT_SHARED_WORKSPACE) {
+    const adminUser = store.users.find((item) => item.email === DEMO_EMAIL);
+    if (adminUser) {
+      req.workspaceUser = adminUser;
+    } else {
+      req.workspaceUser = user;
+    }
+  } else {
+    req.workspaceUser = user;
+  }
+
   next();
 }
 
@@ -953,18 +972,33 @@ app.post("/api/auth/login", (req, res) => {
   const password = String(req.body?.password || "");
   const store = loadStore();
 
-  if (ENABLE_DEMO_LOGIN && email === "kubik" && password === "kubik") {
-    let kubikUser = store.users.find((item) => item.email === "kubik");
-    if (!kubikUser) {
-      kubikUser = {
-        id: "kubik-admin-id",
-        email: "kubik",
-        passwordHash: hashPassword("kubik"),
-        settings: defaultUserSettings(),
-        createdAt: new Date().toISOString()
-      };
-      store.users.push(kubikUser);
-      saveStore(store);
+  if (ENABLE_DEMO_LOGIN) {
+    if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
+      let adminUser = store.users.find((item) => item.email === DEMO_EMAIL);
+      if (!adminUser) {
+        adminUser = {
+          id: "kubik-admin-id",
+          email: DEMO_EMAIL,
+          passwordHash: hashPassword(DEMO_PASSWORD),
+          settings: defaultUserSettings(),
+          createdAt: new Date().toISOString()
+        };
+        store.users.push(adminUser);
+        saveStore(store);
+      }
+    } else if (email === CLIENT_DEMO_EMAIL && password === CLIENT_DEMO_PASSWORD) {
+      let clientUser = store.users.find((item) => item.email === CLIENT_DEMO_EMAIL);
+      if (!clientUser) {
+        clientUser = {
+          id: "client-demo-id",
+          email: CLIENT_DEMO_EMAIL,
+          passwordHash: hashPassword(CLIENT_DEMO_PASSWORD),
+          settings: defaultUserSettings(),
+          createdAt: new Date().toISOString()
+        };
+        store.users.push(clientUser);
+        saveStore(store);
+      }
     }
   }
 
@@ -991,7 +1025,7 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
 });
 
 app.get("/api/config", requireAuth, (req, res) => {
-  const settings = getUserSettingsForClient(req.user);
+  const settings = getUserSettingsForClient(req.workspaceUser);
 
   res.json({
     ok: true,
@@ -1007,11 +1041,11 @@ app.get("/api/config", requireAuth, (req, res) => {
 });
 
 app.get("/api/workspace", requireAuth, (req, res) => {
-  const workspace = sanitizeWorkspace(req.user.workspace || {
-    projects: req.user.projects,
-    ideas: req.user.ideas,
-    media: req.user.media,
-    queue: req.user.queue
+  const workspace = sanitizeWorkspace(req.workspaceUser.workspace || {
+    projects: req.workspaceUser.projects,
+    ideas: req.workspaceUser.ideas,
+    media: req.workspaceUser.media,
+    queue: req.workspaceUser.queue
   });
 
   res.json({
@@ -1022,7 +1056,7 @@ app.get("/api/workspace", requireAuth, (req, res) => {
 
 app.put("/api/workspace", requireAuth, (req, res) => {
   try {
-    const user = req.store.users.find((item) => item.id === req.user.id);
+    const user = req.store.users.find((item) => item.id === req.workspaceUser.id);
     if (!user) return res.status(401).json({ error: "Аккаунт не найден. Войди заново." });
 
     const workspace = sanitizeWorkspace(req.body?.workspace || {});
@@ -1043,7 +1077,7 @@ app.put("/api/workspace", requireAuth, (req, res) => {
 
 app.post("/api/queue", requireAuth, (req, res) => {
   try {
-    const user = req.store.users.find((item) => item.id === req.user.id);
+    const user = req.store.users.find((item) => item.id === req.workspaceUser.id);
     if (!user) return res.status(401).json({ error: "Аккаунт не найден. Войди заново." });
 
     const workspace = sanitizeWorkspace(user.workspace || {});
@@ -1073,7 +1107,7 @@ app.post("/api/config", requireAuth, (req, res) => {
   const { telegramBotToken, telegramChatId, instagramAccessToken, instagramUserId } = req.body || {};
 
   try {
-    const user = req.store.users.find((item) => item.id === req.user.id);
+    const user = req.store.users.find((item) => item.id === req.workspaceUser.id);
     if (!user) return res.status(401).json({ error: "Аккаунт не найден. Войди заново." });
 
     user.settings = { ...defaultUserSettings(), ...(user.settings || {}) };
@@ -1108,7 +1142,7 @@ app.post("/api/config", requireAuth, (req, res) => {
     const settings = getUserSettingsForClient(user);
     res.json({
       ok: true,
-      user: getPublicUser(user),
+      user: getPublicUser(req.user),
       openaiReady: Boolean(settings.openaiApiKey),
       telegramReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
       instagramReady: settings.instagramReady,
@@ -1324,7 +1358,7 @@ app.post("/api/upload", requireAuth, (req, res, next) => {
       ext = mimeMap[req.file.mimetype] || "";
     }
 
-    const safeName = `${req.user.id}_${req.file.filename}${ext}`;
+    const safeName = `${req.workspaceUser.id}_${req.file.filename}${ext}`;
     const oldPath = req.file.path;
     const newPath = path.join(uploadsDir, safeName);
 
@@ -1409,7 +1443,7 @@ app.post("/api/generate-image", requireAuth, async (req, res) => {
     const buffer = await callImageGenerator(enhancedPrompt);
 
     // 3. Сохранение файла на диск в uploadsDir
-    const fileId = `${req.user.id}_gen_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.jpg`;
+    const fileId = `${req.workspaceUser.id}_gen_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.jpg`;
     const newPath = path.join(uploadsDir, fileId);
     
     fs.writeFileSync(newPath, buffer);
@@ -1486,7 +1520,7 @@ async function telegramCall(method, payload, botToken) {
 
 app.post("/api/publish/telegram", requireAuth, async (req, res) => {
   try {
-    const userSettings = getUserSettingsForServer(req.user);
+    const userSettings = getUserSettingsForServer(req.workspaceUser);
     const botToken = userSettings.telegramBotToken;
     const chatId = userSettings.telegramChatId;
 
@@ -1593,7 +1627,7 @@ async function instagramPublishReel(accessToken, userId, videoUrl, caption) {
 
 app.post("/api/publish/instagram", requireAuth, async (req, res) => {
   try {
-    const userSettings = getUserSettingsForServer(req.user);
+    const userSettings = getUserSettingsForServer(req.workspaceUser);
     const { instagramAccessToken, instagramUserId } = userSettings;
 
     if (!instagramAccessToken || !instagramUserId) {
@@ -1641,7 +1675,7 @@ app.get("/api/auth/youtube", requireAuth, (req, res) => {
   const oauth2Client = makeYouTubeOAuth(redirectUri);
 
   // Embed userId in state so callback knows which user to update
-  const state = Buffer.from(JSON.stringify({ userId: req.user.id })).toString("base64url");
+  const state = Buffer.from(JSON.stringify({ userId: req.workspaceUser.id })).toString("base64url");
 
   const url = oauth2Client.generateAuthUrl({
     access_type: "offline",
@@ -1710,7 +1744,7 @@ app.get("/api/auth/youtube/callback", async (req, res) => {
 app.post("/api/auth/youtube/disconnect", requireAuth, (req, res) => {
   try {
     const store = loadStore();
-    const user = store.users.find((u) => u.id === req.user.id);
+    const user = store.users.find((u) => u.id === req.workspaceUser.id);
     if (!user) return res.status(404).json({ error: "Пользователь не найден" });
 
     user.settings = { ...defaultUserSettings(), ...(user.settings || {}) };
@@ -1727,7 +1761,7 @@ app.post("/api/auth/youtube/disconnect", requireAuth, (req, res) => {
 
 app.post("/api/publish/youtube", requireAuth, async (req, res) => {
   try {
-    const userSettings = getUserSettingsForServer(req.user);
+    const userSettings = getUserSettingsForServer(req.workspaceUser);
     const { youtubeRefreshToken } = userSettings;
 
     if (!youtubeRefreshToken) {
@@ -1916,30 +1950,54 @@ app.get("*", (req, res) => {
   }
 });
 
-function seedKubikUser() {
+function seedDemoUsers() {
   try {
     if (!ENABLE_DEMO_LOGIN) return;
     const store = loadStore();
-    const kubikExists = store.users.some((item) => item.email === "kubik");
-    if (!kubikExists) {
+    let changed = false;
+
+    // Seed admin
+    const adminExists = store.users.some((item) => item.email === DEMO_EMAIL);
+    if (!adminExists) {
       const user = {
         id: "kubik-admin-id",
-        email: "kubik",
-        passwordHash: hashPassword("kubik"),
+        email: DEMO_EMAIL,
+        passwordHash: hashPassword(DEMO_PASSWORD),
         settings: defaultUserSettings(),
         createdAt: new Date().toISOString()
       };
       store.users.push(user);
+      changed = true;
+      console.log(`Пользователь администратора '${DEMO_EMAIL}' успешно зарегистрирован по умолчанию.`);
+    }
+
+    // Seed client
+    if (CLIENT_DEMO_EMAIL) {
+      const clientExists = store.users.some((item) => item.email === CLIENT_DEMO_EMAIL);
+      if (!clientExists) {
+        const user = {
+          id: "client-demo-id",
+          email: CLIENT_DEMO_EMAIL,
+          passwordHash: hashPassword(CLIENT_DEMO_PASSWORD),
+          settings: defaultUserSettings(),
+          createdAt: new Date().toISOString()
+        };
+        store.users.push(user);
+        changed = true;
+        console.log(`Пользователь клиента '${CLIENT_DEMO_EMAIL}' успешно зарегистрирован по умолчанию.`);
+      }
+    }
+
+    if (changed) {
       saveStore(store);
-      console.log("Пользователь 'kubik' успешно зарегистрирован по умолчанию.");
     }
   } catch (e) {
-    console.error("Не удалось создать пользователя по умолчанию:", e.message);
+    console.error("Не удалось создать пользователей по умолчанию:", e.message);
   }
 }
 
 app.listen(PORT, "0.0.0.0", () => {
-  seedKubikUser();
+  seedDemoUsers();
   console.log(`Content Factory backend started on port ${PORT}`);
 
   // Запускаем планировщик автопостинга каждые 60 секунд

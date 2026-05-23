@@ -829,6 +829,14 @@
 
     .auth, .app, .modal-root, .toast { position: relative; z-index: 1; }
 
+    .toggle-secret {
+      color: rgba(23, 23, 23, 0.48) !important;
+    }
+    .toggle-secret:hover {
+      background: rgba(23, 23, 23, 0.08) !important;
+      color: #171717 !important;
+    }
+
     .shell { width: min(var(--container), calc(100% - clamp(26px, 5vw, 80px))) !important; }
 
     .topbar {
@@ -2518,7 +2526,7 @@
           </div>
         </label>
 
-        <button class="btn primary" id="authSubmitBtn" type="submit"></button>
+        <button class="btn primary" id="authSubmitBtn" type="submit">Войти</button>
         <button class="btn" id="authModeToggle" type="button" style="display: none;"></button>
         <div class="notice" id="authError" style="display:none;"></div>
       </form>
