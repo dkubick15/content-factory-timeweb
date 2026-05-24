@@ -107,10 +107,7 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 200);
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 300000);
 const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 8000);
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
-const ENABLE_DEMO_LOGIN = IS_PRODUCTION
-  ? process.env.ENABLE_DEMO_LOGIN === "true"
-  : process.env.ENABLE_DEMO_LOGIN !== "false";
+const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN !== "false";
 const DEMO_EMAIL = process.env.DEMO_EMAIL || "kubik";
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "kubik";
 const CLIENT_DEMO_EMAIL = process.env.CLIENT_DEMO_EMAIL || "client";
@@ -323,8 +320,12 @@ function isPlainObject(value) {
 function validateAuthBody(body = {}, mode = "login") {
   const email = normalizeEmail(body.email);
   const password = String(body.password || "");
+  const isConfiguredDemoLogin = mode === "login" && (
+    email === normalizeEmail(DEMO_EMAIL) ||
+    email === normalizeEmail(CLIENT_DEMO_EMAIL)
+  );
 
-  if (!isValidEmail(email)) {
+  if (!isValidEmail(email) && !isConfiguredDemoLogin) {
     return { error: "Укажи нормальный email." };
   }
 
@@ -645,6 +646,29 @@ function createUserToken(user) {
     iat: Date.now(),
     exp: Date.now() + 1000 * 60 * 60 * 24 * 14
   });
+}
+
+function ensureDemoUser(store, email, password, id) {
+  let user = store.users.find((item) => item.email === email);
+  let changed = false;
+
+  if (!user) {
+    user = {
+      id,
+      email,
+      passwordHash: hashPassword(password),
+      settings: defaultUserSettings(),
+      createdAt: new Date().toISOString()
+    };
+    store.users.push(user);
+    changed = true;
+  } else if (!verifyPassword(password, user.passwordHash)) {
+    user.passwordHash = hashPassword(password);
+    user.updatedAt = new Date().toISOString();
+    changed = true;
+  }
+
+  return { user, changed };
 }
 
 function requireAuth(req, res, next) {
@@ -1138,32 +1162,18 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
   const store = loadStore();
 
   if (ENABLE_DEMO_LOGIN) {
+    let demoChanged = false;
+
     if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
-      let adminUser = store.users.find((item) => item.email === DEMO_EMAIL);
-      if (!adminUser) {
-        adminUser = {
-          id: "kubik-admin-id",
-          email: DEMO_EMAIL,
-          passwordHash: hashPassword(DEMO_PASSWORD),
-          settings: defaultUserSettings(),
-          createdAt: new Date().toISOString()
-        };
-        store.users.push(adminUser);
-        saveStore(store);
-      }
+      const result = ensureDemoUser(store, DEMO_EMAIL, DEMO_PASSWORD, "kubik-admin-id");
+      demoChanged = demoChanged || result.changed;
     } else if (email === CLIENT_DEMO_EMAIL && password === CLIENT_DEMO_PASSWORD) {
-      let clientUser = store.users.find((item) => item.email === CLIENT_DEMO_EMAIL);
-      if (!clientUser) {
-        clientUser = {
-          id: "client-demo-id",
-          email: CLIENT_DEMO_EMAIL,
-          passwordHash: hashPassword(CLIENT_DEMO_PASSWORD),
-          settings: defaultUserSettings(),
-          createdAt: new Date().toISOString()
-        };
-        store.users.push(clientUser);
-        saveStore(store);
-      }
+      const result = ensureDemoUser(store, CLIENT_DEMO_EMAIL, CLIENT_DEMO_PASSWORD, "client-demo-id");
+      demoChanged = demoChanged || result.changed;
+    }
+
+    if (demoChanged) {
+      saveStore(store);
     }
   }
 
@@ -2171,32 +2181,16 @@ function seedDemoUsers() {
     let changed = false;
 
     // Seed admin
-    const adminExists = store.users.some((item) => item.email === DEMO_EMAIL);
-    if (!adminExists) {
-      const user = {
-        id: "kubik-admin-id",
-        email: DEMO_EMAIL,
-        passwordHash: hashPassword(DEMO_PASSWORD),
-        settings: defaultUserSettings(),
-        createdAt: new Date().toISOString()
-      };
-      store.users.push(user);
+    const adminResult = ensureDemoUser(store, DEMO_EMAIL, DEMO_PASSWORD, "kubik-admin-id");
+    if (adminResult.changed) {
       changed = true;
       console.log(`Пользователь администратора '${DEMO_EMAIL}' успешно зарегистрирован по умолчанию.`);
     }
 
     // Seed client
     if (CLIENT_DEMO_EMAIL) {
-      const clientExists = store.users.some((item) => item.email === CLIENT_DEMO_EMAIL);
-      if (!clientExists) {
-        const user = {
-          id: "client-demo-id",
-          email: CLIENT_DEMO_EMAIL,
-          passwordHash: hashPassword(CLIENT_DEMO_PASSWORD),
-          settings: defaultUserSettings(),
-          createdAt: new Date().toISOString()
-        };
-        store.users.push(user);
+      const clientResult = ensureDemoUser(store, CLIENT_DEMO_EMAIL, CLIENT_DEMO_PASSWORD, "client-demo-id");
+      if (clientResult.changed) {
         changed = true;
         console.log(`Пользователь клиента '${CLIENT_DEMO_EMAIL}' успешно зарегистрирован по умолчанию.`);
       }
