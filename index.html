@@ -3157,10 +3157,6 @@
 
       const tabs = [
         ["factory", "Завод", icons.factory],
-        ["trends", "Тренды", icons.trends],
-        ["clipper", "Клиппер", icons.clipper],
-        ["board", "Канбан", icons.board],
-        ["media", "Медиа", icons.media],
         ["queue", "Очередь", icons.queue],
         ["projects", "Проекты", icons.projects],
         ["settings", "Настройки", icons.settings],
@@ -3756,44 +3752,6 @@
                       <button class="btn" data-action="open-generated">Предпросмотр</button>
                       <button class="btn primary" data-action="add-to-queue">Поставить в календарь</button>
                     </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- AI Copilot Panel -->
-              <div class="panel copilot-panel" style="margin-top: 0;">
-                <div class="pad">
-                  <div class="section-head">
-                    <div>
-                      <div class="kicker">Инструмент 04</div>
-                      <h2 class="title" style="font-size:20px !important;">ИИ-Копилот</h2>
-                      <p class="text">Общайся с ассистентом для быстрого переписывания и докрутки постов.</p>
-                    </div>
-                    <span class="chip info">Чат</span>
-                  </div>
-
-                  <div class="copilot-messages" id="copilotMessagesContainer">
-                    ${state.copilotMessages.map(msg => `
-                      <div class="copilot-message ${escapeHtml(msg.sender)}">
-                        ${escapeHtml(msg.text)}
-                      </div>
-                    `).join("")}
-                  </div>
-
-                  <div class="copilot-prompt-grid" style="margin-top: 10px;">
-                    <button class="copilot-prompt-chip" data-action="copilot-fast-prompt" data-prompt="Сделай текст более продающим, добавь сочные метафоры">🔥 Сделать острее</button>
-                    <button class="copilot-prompt-chip" data-action="copilot-fast-prompt" data-prompt="Добавь в конце сильный призыв к действию (CTA)">🎯 Добавить CTA</button>
-                    <button class="copilot-prompt-chip" data-action="copilot-fast-prompt" data-prompt="Сократи этот текст в два раза, оставив только суть">⚡️ Сократить</button>
-                    <button class="copilot-prompt-chip" data-action="copilot-fast-prompt" data-prompt="Перепиши этот сценарий/пост в стиле Илона Маска">🚀 В стиле Маска</button>
-                  </div>
-
-                  <div class="form" style="margin-top: 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end;">
-                    <label class="field" style="margin-bottom:0;">
-                      <input class="input" type="text" placeholder="Переписать пост..." id="copilotInput" style="min-height: 40px !important; border-radius: 12px !important;" />
-                    </label>
-                    <button class="btn primary" data-action="copilot-send-trigger" style="min-height: 40px !important; padding: 0 16px !important; border-radius: 12px !important;">
-                      Сказать
-                    </button>
                   </div>
                 </div>
               </div>
@@ -5047,8 +5005,6 @@ function renderMedia() {
                 <ul style="margin: 0 0 16px 0; padding-left: 20px; font-weight: 600; display: grid; gap: 6px; list-style-type: disc;">
                   <li>Все сгенерированные контент-идеи (${state.ideas.length})</li>
                   <li>Все записи в календаре и очереди публикаций (${state.queue.length})</li>
-                  <li>Загруженные медиафайлы и ИИ-видео (${state.media.length})</li>
-                  <li>Все сообщения в чате ИИ-Копилота</li>
                   <li>Историю системного журнала событий</li>
                   <li>Сбросит бриф и настройки активного проекта</li>
                 </ul>
