@@ -2784,6 +2784,174 @@
         grid-template-columns: 1fr !important;
       }
     }
+    /* === 5. Premium Burger Button & Drawer Menu (Light/Dark themes support) === */
+    .burger-btn {
+      display: none;
+      flex-direction: column;
+      justify-content: space-between;
+      width: 24px;
+      height: 18px;
+      background: transparent;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      z-index: 1010;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      margin-left: 6px;
+      flex: 0 0 auto !important;
+    }
+    .burger-btn span {
+      display: block;
+      width: 100%;
+      height: 2px;
+      background-color: #171717; /* Adaptive default */
+      border-radius: 99px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transform-origin: left center;
+    }
+    .burger-btn.open span:nth-child(1) {
+      transform: rotate(45deg) translate(2px, 0px);
+    }
+    .burger-btn.open span:nth-child(2) {
+      width: 0%;
+      opacity: 0;
+    }
+    .burger-btn.open span:nth-child(3) {
+      transform: rotate(-45deg) translate(2px, 1px);
+    }
+
+    /* === 6. Rich Premium Micro-Animations (Springy active states & pulsing glows) === */
+    
+    /* Springy click animation for ALL buttons, platforms, cards, and tabs */
+    .btn:active, 
+    .nav-btn:active, 
+    .platform:active, 
+    .idea:active, 
+    .project-card:active, 
+    .kanban-card:active,
+    .burger-btn:active {
+      transform: scale(0.96) translateY(0) !important;
+      transition: transform 0.08s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+    }
+
+    /* Soft premium animations for views transitions */
+    #main > * {
+      animation: tabFadeSlideIn 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    @keyframes tabFadeSlideIn {
+      0% {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Pulsing active effects for key CTA primary buttons */
+    .btn.primary {
+      position: relative;
+      overflow: hidden;
+    }
+    .btn.primary::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.24), transparent);
+      transform: translateX(-100%);
+      transition: none;
+    }
+    .btn.primary:hover::after {
+      transform: translateX(100%);
+      transition: transform 0.85s ease-in-out;
+    }
+
+    /* Pulsing status glowing circles */
+    .account-pill .chip.ok {
+      animation: pulseGreen 2.2s infinite;
+    }
+    .account-pill .chip.warn {
+      animation: pulseOrange 2.2s infinite;
+    }
+    @keyframes pulseGreen {
+      0% { box-shadow: 0 0 0 0 rgba(74,191,122,.55); }
+      70% { box-shadow: 0 0 0 6px rgba(74,191,122,0); }
+      100% { box-shadow: 0 0 0 0 rgba(74,191,122,0); }
+    }
+    @keyframes pulseOrange {
+      0% { box-shadow: 0 0 0 0 rgba(239,182,71,.55); }
+      70% { box-shadow: 0 0 0 6px rgba(239,182,71,0); }
+      100% { box-shadow: 0 0 0 0 rgba(239,182,71,0); }
+    }
+
+    /* Kanban Card simulated drop animations */
+    .kanban-card.dropping {
+      animation: cardDropSimulate 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    @keyframes cardDropSimulate {
+      0% { transform: scale(1.06) rotate(2deg); opacity: 0.85; }
+      100% { transform: scale(1) rotate(0); opacity: 1; }
+    }
+
+    /* Clipper compilation progress logs animation */
+    .generation-spinner {
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.28);
+      animation: spin 1s linear infinite, glowPulse 1.8s infinite ease-in-out;
+    }
+    @keyframes glowPulse {
+      0%, 100% { box-shadow: 0 0 15px rgba(6, 182, 212, 0.28); }
+      50% { box-shadow: 0 0 30px rgba(6, 182, 212, 0.58); }
+    }
+
+    /* Desktop vs mobile responsive adaptive layouts for burger & navbar */
+    @media (max-width: 1020px) {
+      .burger-btn {
+        display: flex !important;
+      }
+      .nav {
+        position: absolute !important;
+        top: 100% !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 0 0 20px 20px !important;
+        border: 1px solid rgba(23,23,23,.10) !important;
+        border-top: none !important;
+        background: rgba(255, 255, 255, 0.96) !important;
+        backdrop-filter: blur(20px) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 6px !important;
+        padding: 14px !important;
+        max-height: 0 !important;
+        opacity: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+        transition: max-height 0.38s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.28s ease !important;
+        box-shadow: 0 20px 45px rgba(50, 45, 34, 0.12) !important;
+        z-index: 999 !important;
+      }
+      .nav.open {
+        max-height: 490px !important;
+        opacity: 1 !important;
+        pointer-events: all !important;
+        overflow-y: auto !important;
+      }
+      .nav-btn {
+        width: 100% !important;
+        justify-content: flex-start !important;
+        border-radius: 12px !important;
+        padding: 11px 16px !important;
+        font-size: 13.5px !important;
+        font-weight: 800 !important;
+      }
+      .nav-btn span {
+        display: inline-block !important; /* Show text under burger drawer */
+      }
+    }
+
     @media (max-width: 760px) {
       .kanban-board {
         display: flex !important;
@@ -2857,7 +3025,14 @@
           <div class="brand-title">Контент-завод</div>
         </div>
         <nav class="nav" id="nav"></nav>
-        <div class="account-pill" id="accountPill"></div>
+        <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+          <div class="account-pill" id="accountPill"></div>
+          <button class="burger-btn" id="burgerBtn" data-action="toggle-burger" aria-label="Открыть меню">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -3875,8 +4050,8 @@ function renderMedia() {
                   <span class="kanban-column-title">1. Бэклог идей</span>
                   <span class="kanban-column-count">${state.ideas.length}</span>
                 </div>
-                ${state.ideas.length ? state.ideas.map(idea => `
-                  <div class="kanban-card" data-action="select-idea" data-id="${escapeHtml(idea.id)}">
+                ${state.ideas.length ? state.ideas.map((idea, idx) => `
+                  <div class="kanban-card dropping" data-action="select-idea" data-id="${escapeHtml(idea.id)}" style="animation-delay: ${idx * 0.05}s;">
                     <div class="kanban-card-title">${escapeHtml(idea.title)}</div>
                     <div class="kanban-card-meta">
                       <span class="chip info" style="padding:2px 6px; font-size:10px;">${escapeHtml(idea.pillar)}</span>
@@ -3893,7 +4068,7 @@ function renderMedia() {
                   <span class="kanban-column-count">${state.ideas.length ? 1 : 0}</span>
                 </div>
                 ${state.ideas.length ? `
-                  <div class="kanban-card" data-action="tab" data-tab="factory">
+                  <div class="kanban-card dropping" data-action="tab" data-tab="factory" style="animation-delay: 0.1s;">
                     <div class="kanban-card-title" style="font-weight:900;">${escapeHtml(selectedIdea()?.title || state.ideas[0]?.title)}</div>
                     <div class="kanban-card-meta">
                       <span class="chip" style="padding:2px 6px; font-size:10px; background:#171717; color:#fff;">Выпуск</span>
@@ -3909,8 +4084,8 @@ function renderMedia() {
                   <span class="kanban-column-title">3. В очереди</span>
                   <span class="kanban-column-count">${state.queue.length}</span>
                 </div>
-                ${state.queue.length ? state.queue.map(item => `
-                  <div class="kanban-card" data-action="tab" data-tab="queue">
+                ${state.queue.length ? state.queue.map((item, idx) => `
+                  <div class="kanban-card dropping" data-action="tab" data-tab="queue" style="animation-delay: ${(idx + 2) * 0.05}s;">
                     <div class="kanban-card-title">${escapeHtml(item.headline || "Пост")}</div>
                     <div class="kanban-card-meta">
                       <span class="chip ok" style="padding:2px 6px; font-size:10px;">${escapeHtml(item.platform)}</span>
@@ -3926,8 +4101,8 @@ function renderMedia() {
                   <span class="kanban-column-title">4. Опубликовано</span>
                   <span class="kanban-column-count">${publishedMock.length}</span>
                 </div>
-                ${publishedMock.map(item => `
-                  <div class="kanban-card" style="opacity: 0.72;" onclick="showToast('Запись уже в соцсети!')">
+                ${publishedMock.map((item, idx) => `
+                  <div class="kanban-card dropping" style="opacity: 0.72; animation-delay: ${(idx + 4) * 0.05}s;" onclick="showToast('Запись уже в соцсети!')">
                     <div class="kanban-card-title" style="text-decoration: line-through;">${escapeHtml(item.title)}</div>
                     <div class="kanban-card-meta">
                       <span class="chip info" style="padding:2px 6px; font-size:10px; background:rgba(23,23,23,.05); border:none;">${escapeHtml(item.platform)}</span>
@@ -5019,7 +5194,29 @@ function renderMedia() {
 
         if (action === "close-modal" && target.dataset.backdrop === "true" && event.target !== target) return;
         if (action === "close-modal") { closeModal(); return; }
-        if (action === "tab") { state.activeTab = target.dataset.tab; closeModal(); render(); scrollToTop(); if (state.activeTab === "settings") fetchConfig(); return; }
+        if (action === "toggle-burger") {
+          const btn = document.getElementById("burgerBtn");
+          const nav = document.getElementById("nav");
+          if (btn && nav) {
+            btn.classList.toggle("open");
+            nav.classList.toggle("open");
+          }
+          return;
+        }
+        if (action === "tab") {
+          state.activeTab = target.dataset.tab;
+          closeModal();
+          const btn = document.getElementById("burgerBtn");
+          const nav = document.getElementById("nav");
+          if (btn && nav) {
+            btn.classList.remove("open");
+            nav.classList.remove("open");
+          }
+          render();
+          scrollToTop();
+          if (state.activeTab === "settings") fetchConfig();
+          return;
+        }
         
         // Next-Gen Premium Features Handlers
         if (action === "use-trend") {
