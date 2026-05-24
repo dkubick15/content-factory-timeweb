@@ -3640,6 +3640,14 @@
         saveState();
       }
 
+      function clearAiConnectionWarnings() {
+        state.logs = state.logs.filter((log) => {
+          if (log.type !== "bad" && log.type !== "warn") return true;
+          const text = `${log.text || ""}\n${log.meta || ""}`;
+          return !/Timeweb|API_KEY_INVALID|ключ|ИИ|AI|unauthorized|Forbidden|401/i.test(text);
+        });
+      }
+
       function uid(prefix) { return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`; }
       function pad2(value) { return String(value).padStart(2, "0"); }
       function todayInputValue(offset = 0) {
@@ -5467,6 +5475,7 @@ function renderMedia() {
             body: { openaiApiKey: state.settings.openaiApiKey },
             timeoutMs: 50000
           });
+          clearAiConnectionWarnings();
           addLog("ok", "Соединение с ИИ успешно установлено.", JSON.stringify(data, null, 2));
           showToast("ИИ-соединение активно");
           openModal("Соединение работает", "Сервер ИИ успешно ответил на тестовый запрос. Все системы готовы к генерации контента.", `<div class="actions"><button class="btn primary" data-action="generate">Тест генерации</button><button class="btn" data-action="close-modal">Закрыть</button></div>`);
@@ -5509,6 +5518,7 @@ function renderMedia() {
           state.selectedIdeaId = state.ideas[0]?.id || "";
           state.activeTab = "factory";
           state.limitInfo = data.limitInfo || state.limitInfo;
+          clearAiConnectionWarnings();
           addLog("ok", "Идеи получены успешно через ИИ.", JSON.stringify(data, null, 2));
           showToast("Идеи готовы");
         } catch (error) {
