@@ -1,12 +1,9 @@
-FROM node:20-slim
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Install curl for HTTP diagnostic utility and health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --omit=dev
 
 COPY . .
 
