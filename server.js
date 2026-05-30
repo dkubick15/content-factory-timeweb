@@ -389,17 +389,27 @@ function uploadPathFromUrl(fileUrl) {
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
-  const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("hex");
-  return `${salt}:${hash}`;
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(String(password), salt, 120000, 32, "sha256", (err, derivedKey) => {
+      if (err) return reject(err);
+      resolve(`${salt}:${derivedKey.toString("hex")}`);
+    });
+  });
 }
 
 function verifyPassword(password, stored) {
-  const [salt, expected] = String(stored || "").split(":");
-  if (!salt || !expected) return false;
-  const actual = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("hex");
-  const a = Buffer.from(actual, "hex");
-  const b = Buffer.from(expected, "hex");
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  return new Promise((resolve, reject) => {
+    const [salt, expected] = String(stored || "").split(":");
+    if (!salt || !expected) return resolve(false);
+
+    crypto.pbkdf2(String(password), salt, 120000, 32, "sha256", (err, derivedKey) => {
+      if (err) return reject(err);
+      const actual = derivedKey.toString("hex");
+      const a = Buffer.from(actual, "hex");
+      const b = Buffer.from(expected, "hex");
+      resolve(a.length === b.length && crypto.timingSafeEqual(a, b));
+    });
+  });
 }
 
 function encryptionKey() {
@@ -661,7 +671,7 @@ function createUserToken(user) {
   });
 }
 
-function ensureDemoUser(store, email, password, id) {
+async function ensureDemoUser(store, email, password, id) {
   let user = store.users.find((item) => item.email === email);
   let changed = false;
 
@@ -669,16 +679,19 @@ function ensureDemoUser(store, email, password, id) {
     user = {
       id,
       email,
-      passwordHash: hashPassword(password),
+      passwordHash: await hashPassword(password),
       settings: defaultUserSettings(),
       createdAt: new Date().toISOString()
     };
     store.users.push(user);
     changed = true;
-  } else if (!verifyPassword(password, user.passwordHash)) {
-    user.passwordHash = hashPassword(password);
-    user.updatedAt = new Date().toISOString();
-    changed = true;
+  } else {
+    const isCorrect = await verifyPassword(password, user.passwordHash);
+    if (!isCorrect) {
+      user.passwordHash = await hashPassword(password);
+      user.updatedAt = new Date().toISOString();
+      changed = true;
+    }
   }
 
   return { user, changed };
@@ -1141,7 +1154,7 @@ app.get("/api/health", (req, res) => {
   res.json(payload);
 });
 
-app.post("/api/auth/register", authLimiter, (req, res) => {
+app.post("/api/auth/register", authLimiter, async (req, res) => {
   const auth = validateAuthBody(req.body, "register");
   if (auth.error) return res.status(400).json({ error: auth.error });
   const { email, password } = auth;
@@ -1154,7 +1167,7 @@ app.post("/api/auth/register", authLimiter, (req, res) => {
   const user = {
     id: crypto.randomUUID(),
     email,
-    passwordHash: hashPassword(password),
+    passwordHash: await hashPassword(password),
     settings: defaultUserSettings(),
     createdAt: new Date().toISOString()
   };
@@ -1169,7 +1182,7 @@ app.post("/api/auth/register", authLimiter, (req, res) => {
   });
 });
 
-app.post("/api/auth/login", authLimiter, (req, res) => {
+app.post("/api/auth/login", authLimiter, async (req, res) => {
   const auth = validateAuthBody(req.body, "login");
   if (auth.error) return res.status(400).json({ error: auth.error });
   const { email, password } = auth;
@@ -1179,13 +1192,13 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
     let demoChanged = false;
 
     if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
-      const result = ensureDemoUser(store, DEMO_EMAIL, DEMO_PASSWORD, "kubik-admin-id");
+      const result = await ensureDemoUser(store, DEMO_EMAIL, DEMO_PASSWORD, "kubik-admin-id");
       demoChanged = demoChanged || result.changed;
     } else if (email === CLIENT_DEMO_EMAIL && password === CLIENT_DEMO_PASSWORD) {
-      const result = ensureDemoUser(store, CLIENT_DEMO_EMAIL, CLIENT_DEMO_PASSWORD, "client-demo-id");
+      const result = await ensureDemoUser(store, CLIENT_DEMO_EMAIL, CLIENT_DEMO_PASSWORD, "client-demo-id");
       demoChanged = demoChanged || result.changed;
     } else if (email === TEST_DEMO_EMAIL && password === TEST_DEMO_PASSWORD) {
-      const result = ensureDemoUser(store, TEST_DEMO_EMAIL, TEST_DEMO_PASSWORD, "test-demo-2-id");
+      const result = await ensureDemoUser(store, TEST_DEMO_EMAIL, TEST_DEMO_PASSWORD, "test-demo-2-id");
       demoChanged = demoChanged || result.changed;
     }
 
@@ -1196,7 +1209,8 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
 
   const user = store.users.find((item) => item.email === email);
 
-  if (!user || !verifyPassword(password, user.passwordHash)) {
+  const isPasswordCorrect = user ? await verifyPassword(password, user.passwordHash) : false;
+  if (!user || !isPasswordCorrect) {
     return res.status(401).json({
       error: "Неверный email или пароль"
     });
@@ -2370,14 +2384,14 @@ app.get("*", (req, res) => {
   }
 });
 
-function seedDemoUsers() {
+async function seedDemoUsers() {
   try {
     if (!ENABLE_DEMO_LOGIN) return;
     const store = loadStore();
     let changed = false;
 
     // Seed admin
-    const adminResult = ensureDemoUser(store, DEMO_EMAIL, DEMO_PASSWORD, "kubik-admin-id");
+    const adminResult = await ensureDemoUser(store, DEMO_EMAIL, DEMO_PASSWORD, "kubik-admin-id");
     if (adminResult.changed) {
       changed = true;
       console.log(`Пользователь администратора '${DEMO_EMAIL}' успешно зарегистрирован по умолчанию.`);
@@ -2385,7 +2399,7 @@ function seedDemoUsers() {
 
     // Seed client
     if (CLIENT_DEMO_EMAIL) {
-      const clientResult = ensureDemoUser(store, CLIENT_DEMO_EMAIL, CLIENT_DEMO_PASSWORD, "client-demo-id");
+      const clientResult = await ensureDemoUser(store, CLIENT_DEMO_EMAIL, CLIENT_DEMO_PASSWORD, "client-demo-id");
       if (clientResult.changed) {
         changed = true;
         console.log(`Пользователь клиента '${CLIENT_DEMO_EMAIL}' успешно зарегистрирован по умолчанию.`);
@@ -2394,7 +2408,7 @@ function seedDemoUsers() {
 
     // Seed second limited test account
     if (TEST_DEMO_EMAIL) {
-      const testResult = ensureDemoUser(store, TEST_DEMO_EMAIL, TEST_DEMO_PASSWORD, "test-demo-2-id");
+      const testResult = await ensureDemoUser(store, TEST_DEMO_EMAIL, TEST_DEMO_PASSWORD, "test-demo-2-id");
       if (testResult.changed) {
         changed = true;
         console.log(`Тестовый пользователь '${TEST_DEMO_EMAIL}' успешно зарегистрирован по умолчанию.`);
@@ -2409,17 +2423,37 @@ function seedDemoUsers() {
   }
 }
 
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`Content Factory backend started on port ${PORT}`);
 
   // Запускаем планировщик автопостинга каждые 60 секунд
   setInterval(runScheduledPublishing, 60 * 1000);
   console.log("[Scheduler] Планировщик автопостинга запущен (интервал: 60 сек)");
 
-  // Запуск синхронного тяжелого хэширования демо-пользователей с задержкой 4 сек, чтобы не блокировать Health Check
-  setTimeout(() => {
-    console.log("[Startup] Запуск отложенной инициализации демо-пользователей...");
-    seedDemoUsers();
-    console.log("[Startup] Отложенная инициализация демо-пользователей завершена.");
-  }, 4000);
+  // Инициализация демо-пользователей только если включена переменная окружения SEED_DEMO_USERS
+  if (process.env.SEED_DEMO_USERS === "true") {
+    console.log("[Startup] Запуск асинхронного сидирования демо-пользователей...");
+    seedDemoUsers().then(() => {
+      console.log("[Startup] Асинхронное сидирование демо-пользователей успешно завершено.");
+    }).catch((err) => {
+      console.error("[Startup] Ошибка при сидировании демо-пользователей:", err.message);
+    });
+  }
+});
+
+// Обработка сигналов завершения для корректного graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("[Shutdown] Получен сигнал SIGTERM. Запуск graceful shutdown...");
+  server.close(() => {
+    console.log("[Shutdown] HTTP сервер Express успешно закрыт. Завершение процесса.");
+    process.exit(0);
+  });
+});
+
+process.on("SIGINT", () => {
+  console.log("[Shutdown] Получен сигнал SIGINT. Запуск graceful shutdown...");
+  server.close(() => {
+    console.log("[Shutdown] HTTP сервер Express успешно закрыт. Завершение процесса.");
+    process.exit(0);
+  });
 });
