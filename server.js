@@ -1310,14 +1310,7 @@ function getHealthPayload() {
 }
 
 app.get(["/api/health", "/health", "/healthz"], (req, res) => {
-  res.status(200).json({
-    ok: true,
-    service: "content-factory-backend",
-    build: APP_BUILD,
-    port: process.env.PORT,
-    env: process.env.NODE_ENV,
-    dataDir: process.env.DATA_DIR
-  });
+  res.status(200).send("ok");
 });
 
 app.post("/api/auth/register", authLimiter, async (req, res) => {

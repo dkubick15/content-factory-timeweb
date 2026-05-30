@@ -37,7 +37,4 @@ EXPOSE 8080
 
 USER app
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 \
-  CMD curl -fsS http://127.0.0.1:${PORT}/api/health || exit 1
-
 CMD ["node", "server.js"]
