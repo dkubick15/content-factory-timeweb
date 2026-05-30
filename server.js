@@ -29,7 +29,7 @@ loadPackedEnvVariable("logi");
 loadPackedEnvVariable("LOGI");
 loadPackedEnvVariable("TIMEWEB_ENV");
 
-const APP_BUILD = "2026-05-30-marketing-machine-v5";
+const APP_BUILD = "2026-05-30-marketing-machine-v6";
 const FALLBACK_TIMEWEB_AGENT_ID = "40f010e8-9dd7-473c-812f-81b65aba981f";
 
 function extractJwt(value) {
@@ -1107,7 +1107,7 @@ function withTimeout(promise, ms, label) {
 }
 
 app.get("/api/health", (req, res) => {
-  const store = loadStore();
+  console.log(`[HealthCheck] Received request from ${req.ip || req.connection?.remoteAddress} - User-Agent: ${req.headers["user-agent"]}`);
   const hasTimeweb = Boolean(TIMEWEB_API_KEY && TIMEWEB_AGENT_ID);
 
   const payload = {
@@ -1123,6 +1123,7 @@ app.get("/api/health", (req, res) => {
   };
 
   if (DEBUG_HEALTH) {
+    const store = loadStore();
     payload.users = store.users.length;
     payload.agent = hasTimeweb ? TIMEWEB_AGENT_ID : "";
     payload.env = {
