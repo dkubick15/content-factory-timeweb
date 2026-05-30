@@ -1421,7 +1421,9 @@ app.get("/api/workspace", requireAuth, (req, res) => {
 
   res.json({
     ok: true,
-    workspace
+    workspace,
+    limitInfo: getLimitInfo(req),
+    openaiReady: Boolean(TIMEWEB_API_KEY)
   });
 });
 

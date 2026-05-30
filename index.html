@@ -962,7 +962,7 @@
         padding: 24px;
       }
 
-      .burger-btn {
+      body.logged-in .burger-btn {
         display: block;
         position: fixed;
         top: 16px;
@@ -1168,7 +1168,6 @@
         ["board", "Канбан", icons.board],
         ["media", "Медиа", icons.media],
         ["queue", "Очередь", icons.queue],
-        ["projects", "Проекты", icons.projects],
         ["settings", "Настройки", icons.settings],
         ["logout", "Выход", icons.logout]
       ];
@@ -1361,7 +1360,15 @@
 
       function loadState() {
         try {
-          const raw = localStorage.getItem(storageKey());
+          let raw = localStorage.getItem(storageKey());
+          if (!raw && currentEmail()) {
+            const guestKey = `${STORE_KEY}_guest`;
+            const guestRaw = localStorage.getItem(guestKey);
+            if (guestRaw) {
+              raw = guestRaw;
+              localStorage.setItem(storageKey(), raw);
+            }
+          }
           if (!raw) return clone(defaultState);
           const parsed = JSON.parse(raw);
           const merged = clone(defaultState);
@@ -1371,16 +1378,26 @@
           merged.briefMode = parsed.briefMode || defaultState.briefMode;
           if (merged.planner.publishDate === undefined || merged.planner.publishDate === null) merged.planner.publishDate = todayInputValue();
           if (merged.planner.publishTime === undefined || merged.planner.publishTime === null) merged.planner.publishTime = nextHourInputValue();
+          
           merged.settings.openaiApiKey = "";
           merged.settings.telegramBotToken = "";
-          merged.ideas = [];
-          merged.queue = [];
-          merged.media = [];
-          merged.logs = [];
-          merged.selectedIdeaId = "";
-          merged.selectedMediaId = "";
-          merged.projects = clone(defaultState.projects);
-          merged.activeProjectId = "p_1";
+          
+          merged.ideas = parsed.ideas || [];
+          merged.queue = parsed.queue || [];
+          merged.media = parsed.media || [];
+          merged.logs = parsed.logs || [];
+          merged.selectedIdeaId = parsed.selectedIdeaId || "";
+          merged.selectedMediaId = parsed.selectedMediaId || "";
+          if (parsed.projects && parsed.projects.length) {
+            merged.projects = parsed.projects;
+            merged.activeProjectId = parsed.activeProjectId || parsed.projects[0].id;
+          } else {
+            merged.projects = clone(defaultState.projects);
+            merged.activeProjectId = "p_1";
+          }
+          if (parsed.limitInfo) {
+            merged.limitInfo = parsed.limitInfo;
+          }
           merged.secretVisible = {};
           return merged;
         } catch {
@@ -1613,6 +1630,76 @@
         return text;
       }
 
+      function bindMediaUploadListeners() {
+        const fileInput = document.getElementById("mediaFile");
+        const uploadZone = document.getElementById("uploadZone");
+        const uploadPreview = document.getElementById("uploadPreview");
+        const previewMediaContainer = document.getElementById("previewMediaContainer");
+        const previewFileName = document.getElementById("previewFileName");
+        
+        if (!fileInput || !uploadZone) return;
+
+        uploadZone.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          uploadZone.style.borderColor = "var(--accent)";
+          uploadZone.style.backgroundColor = "rgba(255,255,255,0.03)";
+        });
+
+        uploadZone.addEventListener("dragleave", (e) => {
+          uploadZone.style.borderColor = "var(--border)";
+          uploadZone.style.backgroundColor = "rgba(255,255,255,0.01)";
+        });
+
+        const handleFileSelect = (file) => {
+          uploadZone.style.borderColor = "var(--border)";
+          uploadZone.style.backgroundColor = "rgba(255,255,255,0.01)";
+
+          if (!file) return;
+
+          const maxMB = 50;
+          if (file.size > maxMB * 1024 * 1024) {
+            showToast(`Файл слишком большой. Разрешено до ${maxMB} МБ.`);
+            fileInput.value = "";
+            uploadPreview.style.display = "none";
+            return;
+          }
+
+          const allowed = ["image/", "video/"];
+          const isAllowed = allowed.some(prefix => file.type.startsWith(prefix));
+          if (!isAllowed) {
+            showToast("Неподдерживаемый формат. Выберите изображение или видео.");
+            fileInput.value = "";
+            uploadPreview.style.display = "none";
+            return;
+          }
+
+          previewFileName.textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+          previewMediaContainer.innerHTML = "";
+
+          const url = URL.createObjectURL(file);
+          if (file.type.startsWith("image/")) {
+            previewMediaContainer.innerHTML = `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover; max-width: 100%; max-height: 100%;">`;
+          } else if (file.type.startsWith("video/")) {
+            previewMediaContainer.innerHTML = `<video src="${url}" muted controls style="width: 100%; height: 100%; object-fit: cover; max-width: 100%; max-height: 100%;"></video>`;
+          }
+
+          uploadPreview.style.display = "flex";
+        };
+
+        fileInput.addEventListener("change", (e) => {
+          handleFileSelect(e.target.files[0]);
+        });
+
+        uploadZone.addEventListener("drop", (e) => {
+          e.preventDefault();
+          const files = e.dataTransfer.files;
+          if (files.length) {
+            fileInput.files = files;
+            handleFileSelect(files[0]);
+          }
+        });
+      }
+
       function activeProject() { return state.projects.find((p) => p.id === state.activeProjectId) || state.projects[0]; }
       function selectedIdea() { return state.ideas.find((idea) => idea.id === state.selectedIdeaId) || state.ideas[0] || null; }
       function selectedContent() {
@@ -1627,25 +1714,59 @@
         renderAccount();
         renderMain();
         saveState();
+        if (state.activeTab === "media") {
+          bindMediaUploadListeners();
+        }
       }
 
       function renderNav() {
-        el.nav.innerHTML = tabs.map(([id, label, svg]) => `
-          <button class="nav-btn ${state.activeTab === id ? "active" : ""}" data-action="${id === "logout" ? "logout" : "tab"}" data-tab="${id}">
-            ${svg}<span>${escapeHtml(label)}</span>
-          </button>
-        `).join("");
+        const projectOptions = state.projects.map(p => `<option value="${p.id}" ${p.id === state.activeProjectId ? 'selected' : ''}>📁 ${escapeHtml(p.name)}</option>`).join("");
+        
+        el.nav.innerHTML = `
+          <div style="padding: 0 12px 16px 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700;">Активный проект</span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <select class="select" data-action="sidebar-select-project" style="flex: 1; min-height: 36px; font-size: 13px; font-weight: 600; padding: 4px 8px; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-main);">
+                ${projectOptions}
+              </select>
+              <button class="btn icon-only primary" data-action="new-project" title="Создать проект" style="min-height: 36px; padding: 8px; width: 36px; display: flex; justify-content: center; align-items: center;">➕</button>
+            </div>
+          </div>
+          ${tabs.map(([id, label, svg]) => `
+            <button class="nav-btn ${state.activeTab === id ? "active" : ""}" data-action="${id === "logout" ? "logout" : "tab"}" data-tab="${id}">
+              ${svg}<span>${escapeHtml(label)}</span>
+            </button>
+          `).join("")}
+        `;
         syncNavA11y();
       }
 
       function renderAccount() {
-        const keyReady = Boolean(state.settings.openaiApiKey);
+        const keyReady = Boolean(state.settings.openaiReady || state.settings.openaiApiKey);
+        
+        let limitHtml = "";
+        if (state.limitInfo && !state.limitInfo.isUnlimited) {
+          limitHtml = `
+            <div style="font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-weight: 600; color: var(--accent);">Лимит: ${state.limitInfo.remaining} из ${state.limitInfo.limit} генераций</span>
+              <span>Обновление каждые 24ч</span>
+            </div>
+          `;
+        } else {
+          limitHtml = `
+            <div style="font-size: 11px; color: var(--success); border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; font-weight: 600;">
+              ✨ Безлимитный аккаунт
+            </div>
+          `;
+        }
+
         el.accountPill.innerHTML = `
           <div style="font-weight: 600; color: var(--text-main);">${escapeHtml(currentEmail() || "Аккаунт")}</div>
           <div style="display: flex; align-items: center; gap: 6px;">
             <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${keyReady ? 'var(--success)' : 'var(--danger)'};"></span>
             ${keyReady ? 'ИИ активен' : 'ИИ не настроен'}
           </div>
+          ${limitHtml}
         `;
       }
 
@@ -1750,13 +1871,33 @@
       }
 
       // --- MARKETING BASE & VAULT: renderDatabase ---
+      function getProjectCompletionPercentage(project) {
+        const fields = [
+          "name", "niche", "offer", "price", "timelines", "warranty", "geo", "landingPage", 
+          "audience", "pain", "fear", "reason", "proof", "facts", "goal", "nextStep", 
+          "leadMagnet", "tone", "stopWords"
+        ];
+        let filledCount = 0;
+        fields.forEach(f => {
+          if (project[f] && String(project[f]).trim().length > 0) filledCount++;
+        });
+        return Math.round((filledCount / fields.length) * 100);
+      }
+
       function renderDatabase() {
         const project = activeProject();
         
         return `
           <div class="panel">
-            <h1 class="title-xl">Маркетинговая база проекта</h1>
-            <p class="text">Заполни коммерческий контекст бизнеса, чтобы ИИ-маркетолог и ИИ-критик генерировали сильный конвертящий контент.</p>
+            <div class="row">
+              <div>
+                <h1 class="title-xl">Маркетинговая база проекта</h1>
+                <p class="text">Заполни коммерческий контекст бизнеса, чтобы ИИ-маркетолог и ИИ-критик генерировали сильный конвертящий контент.</p>
+              </div>
+              <div class="chip ok" style="font-size: 13px; padding: 8px 12px; font-weight: 700; height: fit-content; display: flex; align-items: center; gap: 6px;">
+                📊 База заполнена на ${getProjectCompletionPercentage(project)}%
+              </div>
+            </div>
           </div>
 
           <div class="panel">
@@ -1787,13 +1928,16 @@
             </div>
           </div>
 
-          <div class="auto">
-            <!-- Блок 1: Продукт и Бизнес -->
-            <div class="panel">
-              <h2 class="title" style="color: var(--accent); display: flex; align-items: center; gap: 8px;">
-                ${icons.projects} Продукт и Бизнес
-              </h2>
-              <div class="form" style="margin-top: 16px;">
+          <div class="stack" style="gap: 16px; margin-top: 24px;">
+            <!-- Блок 1: Основное (Продукт и Бизнес) -->
+            <details class="panel" style="padding: 16px; cursor: pointer; border: 1px solid var(--border);" open>
+              <summary style="font-weight: 700; font-size: 16px; color: var(--accent); list-style: none; display: flex; justify-content: space-between; align-items: center; outline: none; user-select: none;">
+                <span style="display: flex; align-items: center; gap: 8px;">
+                  ${icons.projects} 1. Основное (Продукт и Бизнес)
+                </span>
+                <span style="font-size: 12px; color: var(--text-muted); transition: transform 0.2s;">&#9662;</span>
+              </summary>
+              <div class="form" style="margin-top: 16px; cursor: default;" onclick="event.stopPropagation();">
                 <label class="field">
                   <span class="label">Название проекта</span>
                   <input class="input" data-action="project-input" name="name" value="${escapeHtml(project.name)}" />
@@ -1827,14 +1971,17 @@
                   <input class="input" data-action="project-input" name="landingPage" placeholder="Например: https://potolki-spb.ru/quiz" value="${escapeHtml(project.landingPage || "")}" />
                 </label>
               </div>
-            </div>
+            </details>
 
             <!-- Блок 2: Целевая аудитория -->
-            <div class="panel">
-              <h2 class="title" style="color: var(--info); display: flex; align-items: center; gap: 8px;">
-                ${icons.logs} Целевая аудитория
-              </h2>
-              <div class="form" style="margin-top: 16px;">
+            <details class="panel" style="padding: 16px; cursor: pointer; border: 1px solid var(--border);">
+              <summary style="font-weight: 700; font-size: 16px; color: var(--info); list-style: none; display: flex; justify-content: space-between; align-items: center; outline: none; user-select: none;">
+                <span style="display: flex; align-items: center; gap: 8px;">
+                  ${icons.logs} 2. Клиент (Целевая аудитория)
+                </span>
+                <span style="font-size: 12px; color: var(--text-muted); transition: transform 0.2s;">&#9662;</span>
+              </summary>
+              <div class="form" style="margin-top: 16px; cursor: default;" onclick="event.stopPropagation();">
                 <label class="field">
                   <span class="label">Сегменты аудитории</span>
                   <textarea class="textarea" data-action="project-input" name="audience" placeholder="Например: Новоселы в ЖК (хотят быстро и без хлопот), Мамы с детьми (нужна экологичность, без запаха), Дизайнеры..." style="min-height: 80px;">${escapeHtml(project.audience || "")}</textarea>
@@ -1860,16 +2007,17 @@
                   <input class="input" data-action="project-input" name="reason" placeholder="Например: Ждут окончания черновых работ / Думают сделать сами" value="${escapeHtml(project.reason || "")}" />
                 </label>
               </div>
-            </div>
-          </div>
+            </details>
 
-          <div class="auto" style="margin-top: 24px;">
-            <!-- Блок 3: Банк доказательств / Proof Vault -->
-            <div class="panel">
-              <h2 class="title" style="color: var(--success); display: flex; align-items: center; gap: 8px;">
-                ${icons.check} Банк доказательств / Proof Vault
-              </h2>
-              <div class="form" style="margin-top: 16px;">
+            <!-- Блок 3: Банк доказательств -->
+            <details class="panel" style="padding: 16px; cursor: pointer; border: 1px solid var(--border);">
+              <summary style="font-weight: 700; font-size: 16px; color: var(--success); list-style: none; display: flex; justify-content: space-between; align-items: center; outline: none; user-select: none;">
+                <span style="display: flex; align-items: center; gap: 8px;">
+                  ${icons.check} 3. Доказательства (Факты и отзывы)
+                </span>
+                <span style="font-size: 12px; color: var(--text-muted); transition: transform 0.2s;">&#9662;</span>
+              </summary>
+              <div class="form" style="margin-top: 16px; cursor: default;" onclick="event.stopPropagation();">
                 <label class="field">
                   <span class="label">Факты и УТП (цифры, склад, сертификаты)</span>
                   <textarea class="textarea" data-action="project-input" name="proof" placeholder="Например: Собственное производство 1200м2, сертифицированные полотна MSD Premium (Германия) без запаха, 14 штатных бригад с опытом от 5 лет, работаем строго по ГОСТ." style="min-height: 100px;">${escapeHtml(project.proof || "")}</textarea>
@@ -1879,14 +2027,17 @@
                   <textarea class="textarea" data-action="project-input" name="facts" placeholder="Например: Кейс: Потолок в 3-комнатной квартире за 6 часов без пыли. Отзыв Ирины: 'Монтажники приехали вовремя, убрали за собой строительным пылесосом, цена осталась как в смете'." style="min-height: 100px;">${escapeHtml(project.facts || "")}</textarea>
                 </label>
               </div>
-            </div>
+            </details>
 
             <!-- Блок 4: Конверсии и Позиционирование -->
-            <div class="panel">
-              <h2 class="title" style="color: #a855f7; display: flex; align-items: center; gap: 8px;">
-                ${icons.spark} Конверсии и Позиционирование
-              </h2>
-              <div class="form" style="margin-top: 16px;">
+            <details class="panel" style="padding: 16px; cursor: pointer; border: 1px solid var(--border);">
+              <summary style="font-weight: 700; font-size: 16px; color: #a855f7; list-style: none; display: flex; justify-content: space-between; align-items: center; outline: none; user-select: none;">
+                <span style="display: flex; align-items: center; gap: 8px;">
+                  ${icons.spark} 4. Генерация (Цели и Tone of Voice)
+                </span>
+                <span style="font-size: 12px; color: var(--text-muted); transition: transform 0.2s;">&#9662;</span>
+              </summary>
+              <div class="form" style="margin-top: 16px; cursor: default;" onclick="event.stopPropagation();">
                 <div class="auto-tight">
                   <label class="field">
                     <span class="label">Цель материала</span>
@@ -1920,7 +2071,16 @@
                   </label>
                 </div>
               </div>
+            </details>
+          </div>
+
+          <!-- Опасная зона (Удаление проекта) -->
+          <div class="panel" style="margin-top: 24px; border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.02); display: flex; justify-content: space-between; align-items: center; padding: 16px; border-radius: var(--radius);">
+            <div>
+              <h4 style="font-weight: 700; color: #f87171; font-size: 14px; margin-bottom: 4px; margin-top: 0;">⚠️ Опасная зона</h4>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Удаление текущего активного проекта и всех сохраненных им полей брифа.</p>
             </div>
+            <button class="btn danger" data-action="delete-project" style="white-space: nowrap;">Удалить этот проект</button>
           </div>
         `;
       }
@@ -2333,7 +2493,13 @@
                 <h1 class="title-xl">Фабрика контента</h1>
                 <p class="text">Сборка материалов из коммерческого контекста в готовый пакет по шаблону.</p>
               </div>
-              <button class="btn primary" data-action="generate">${icons.spark} Сгенерировать</button>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                <span class="chip info" style="font-size: 11px; padding: 6px 10px;">📁 Проект выбран</span>
+                <span class="chip ok" style="font-size: 11px; padding: 6px 10px;">📊 База заполнена на ${getProjectCompletionPercentage(project)}%</span>
+                <span class="chip" style="font-size: 11px; padding: 6px 10px; background: ${state.settings.openaiReady || state.settings.openaiApiKey ? 'var(--success)' : 'var(--danger)'}; color: #fff;">
+                  ⚡ ИИ ${state.settings.openaiReady || state.settings.openaiApiKey ? 'готов к работе' : 'не настроен'}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -2345,11 +2511,9 @@
               <div class="form" style="margin-top: 16px;">
                 <label class="field">
                   <span class="label">Выбранный проект</span>
-                  <div style="font-weight: 600; color: var(--accent); padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius);">
-                    ${escapeHtml(project.name)}
-                  </div>
-                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                    Стратегия и база редактируются во вкладке <a href="#" data-action="tab" data-tab="database" style="color: var(--accent); text-decoration: underline;">База проекта</a>
+                  <div style="font-weight: 600; color: var(--accent); padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius); display: flex; justify-content: space-between; align-items: center;">
+                    <span>${escapeHtml(project.name)}</span>
+                    <a href="#" data-action="tab" data-tab="database" style="color: var(--accent); text-decoration: underline; font-size: 11px;">⚙️ Настроить базу</a>
                   </div>
                 </label>
 
@@ -2377,8 +2541,8 @@
                   ${renderPlannerInput("publishTime", "Время", planner.publishTime, "", "time")}
                 </div>
                 
-                <button class="btn primary" data-action="generate" style="margin-top: 16px; width: 100%; font-weight: 700;">
-                  ${icons.spark} Запустить генерацию пакета
+                <button class="btn primary" data-action="generate" style="margin-top: 16px; width: 100%; font-weight: 700;" ${state.limitInfo && !state.limitInfo.isUnlimited && state.limitInfo.remaining < 1 ? 'disabled style="opacity: 0.5; cursor: not-allowed; background: var(--border);"' : ''}>
+                  ${state.limitInfo && !state.limitInfo.isUnlimited && state.limitInfo.remaining < 1 ? "Недостаточно лимитов (обновится завтра)" : `${icons.spark} Запустить генерацию постов`}
                 </button>
                 <button class="btn" data-action="fill-brief-template" style="width: 100%; justify-content: center;">
                   ${icons.file} Сделать бриф под этот формат
@@ -2415,14 +2579,20 @@
                     <label class="field">
                       <span class="label">Текст</span>
                       <textarea class="textarea" data-action="edit-content" data-field="body" style="min-height: 200px;">${escapeHtml(content.body)}</textarea>
-                      <!-- AI Refinement Buttons -->
-                      <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
-                        <button class="btn small" data-action="refine-pain" type="button" style="background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.2); color: #f87171;">💥 Усилить боль</button>
-                        <button class="btn small" data-action="refine-proof" type="button" style="background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.2); color: #4ade80;">🛡️ Добавить факт</button>
-                        <button class="btn small" data-action="refine-shorten" type="button" style="background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.2); color: #60a5fa;">✂️ Сократить</button>
-                        <button class="btn small" data-action="refine-rsy" type="button" style="background: rgba(168, 85, 247, 0.08); border-color: rgba(168, 85, 247, 0.2); color: #c084fc;">🎯 Под РСЯ</button>
-                        <button class="btn small" data-action="refine-reels" type="button" style="background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.2); color: #facc15;">🎬 Под Reels</button>
-                      </div>
+                      <!-- AI Refinement Accordion -->
+                      <details style="margin-top: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: rgba(255,255,255,0.01); padding: 8px;">
+                        <summary style="font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; outline: none; user-select: none;">
+                          <span>✨ Улучшить текст с помощью ИИ (быстрые промпты)</span>
+                          <span style="font-size: 10px; color: var(--text-muted);">&#9662;</span>
+                        </summary>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;" onclick="event.stopPropagation();">
+                          <button class="btn small" data-action="refine-pain" type="button" style="background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.2); color: #f87171;">💥 Усилить боль</button>
+                          <button class="btn small" data-action="refine-proof" type="button" style="background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.2); color: #4ade80;">🛡️ Добавить факт</button>
+                          <button class="btn small" data-action="refine-shorten" type="button" style="background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.2); color: #60a5fa;">✂️ Сократить</button>
+                          <button class="btn small" data-action="refine-rsy" type="button" style="background: rgba(168, 85, 247, 0.08); border-color: rgba(168, 85, 247, 0.2); color: #c084fc;">🎯 Под РСЯ</button>
+                          <button class="btn small" data-action="refine-reels" type="button" style="background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.2); color: #facc15;">🎬 Под Reels</button>
+                        </div>
+                      </details>
                     </label>
                     <label class="field"><span class="label">Теги</span><input class="input" data-action="edit-content" data-field="tags" value="${escapeHtml(content.tags)}" /></label>
                     <label class="field">
@@ -2450,10 +2620,20 @@
         return `
           <div class="panel">
             <h1 class="title-xl">Медиафайлы</h1>
-            <p class="text">Загружай материалы, чтобы прикреплять их к постам.</p>
-            <div class="form" style="margin-top: 24px; max-width: 400px;">
-              <input class="input" type="file" id="mediaFile" accept="image/*,video/*" />
-              <button class="btn primary" data-action="upload-media">${icons.upload} Загрузить на сервер</button>
+            <p class="text">Загружай материалы, чтобы прикреплять их к постам. Поддерживаются изображения и видео до 50 МБ.</p>
+            
+            <div class="upload-zone" id="uploadZone" style="border: 2px dashed var(--border); border-radius: var(--radius); padding: 30px; text-align: center; background: rgba(255,255,255,0.01); margin-top: 20px; transition: border-color 0.2s, background-color 0.2s; cursor: pointer; position: relative;">
+              <input type="file" id="mediaFile" accept="image/*,video/*" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;" />
+              <div style="font-size: 32px; margin-bottom: 12px;">📁</div>
+              <div style="font-weight: 600; color: var(--accent);">Перетащите файлы сюда или кликните для выбора</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">Поддерживаются изображения и видео до 50 МБ</div>
+              
+              <!-- Preview Zone -->
+              <div id="uploadPreview" style="margin-top: 16px; display: none; flex-direction: column; align-items: center; gap: 8px;" onclick="event.stopPropagation();">
+                <div id="previewMediaContainer" style="width: 160px; height: 120px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border);"></div>
+                <div id="previewFileName" style="font-size: 12px; font-weight: 600; color: var(--text-main);">filename.png</div>
+                <button class="btn primary" data-action="upload-media" style="margin-top: 8px;">🚀 Загрузить выбранный файл</button>
+              </div>
             </div>
           </div>
           <div class="auto">
@@ -2497,6 +2677,10 @@
                 <div class="kanban-card" draggable="true" ondragstart="event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'idea', id: '${escapeHtml(idea.id)}' })); window._kanbanDragCard = this;" ondragend="window._kanbanDragCard = null;" data-action="select-idea" data-id="${escapeHtml(idea.id)}">
                   <div class="kanban-card-title">${escapeHtml(idea.title)}</div>
                   <div class="kanban-card-meta"><span>${escapeHtml(idea.pillar)}</span></div>
+                  <div style="display: flex; gap: 4px; margin-top: 8px;" onclick="event.stopPropagation();">
+                    <button class="btn small" data-action="kanban-to-editor" data-id="${escapeHtml(idea.id)}" style="padding: 2px 6px; font-size: 10px; min-height: auto;">✍️ В редактор</button>
+                    <button class="btn small primary" data-action="kanban-to-queue" data-id="${escapeHtml(idea.id)}" style="padding: 2px 6px; font-size: 10px; min-height: auto;">📅 В очередь</button>
+                  </div>
                 </div>
               `).join("") : renderEmpty("Пусто")}
             </div>
@@ -2508,6 +2692,9 @@
                 <div class="kanban-card" data-action="tab" data-tab="factory" style="border-color: var(--accent);">
                   <div class="kanban-card-title">${escapeHtml(selectedIdea()?.title || state.ideas[0]?.title)}</div>
                   <div class="kanban-card-meta"><span>Активно</span></div>
+                  <div style="display: flex; gap: 4px; margin-top: 8px;" onclick="event.stopPropagation();">
+                    <button class="btn small primary" data-action="kanban-editor-to-queue" style="padding: 2px 6px; font-size: 10px; min-height: auto; width: 100%; justify-content: center;">📅 В очередь</button>
+                  </div>
                 </div>
               ` : renderEmpty("Пусто")}
             </div>
@@ -2519,6 +2706,10 @@
                 <div class="kanban-card" draggable="true" ondragstart="event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'scheduled', id: '${escapeHtml(item.id)}' }))" data-action="open-queue" data-id="${escapeHtml(item.id)}">
                   <div class="kanban-card-title">${escapeHtml(item.title)}</div>
                   <div class="kanban-card-meta"><span class="chip ok">${escapeHtml(item.platform)}</span></div>
+                  <div style="display: flex; gap: 4px; margin-top: 8px;" onclick="event.stopPropagation();">
+                    <button class="btn small green" data-action="publish-one" data-id="${escapeHtml(item.id)}" style="padding: 2px 6px; font-size: 10px; min-height: auto; color: #fff;">🚀 Опубликовать</button>
+                    <button class="btn small danger" data-action="remove-queue" data-id="${escapeHtml(item.id)}" style="padding: 2px 6px; font-size: 10px; min-height: auto;">❌ Удалить</button>
+                  </div>
                 </div>
               `).join("") : renderEmpty("Пусто")}
             </div>
@@ -2729,11 +2920,11 @@
       function workspacePayload() { return { activeProjectId: state.activeProjectId, activePlatform: state.activePlatform, activeTemplateId: state.activeTemplateId, selectedIdeaId: state.selectedIdeaId, selectedMediaId: state.selectedMediaId, planner: state.planner, projects: state.projects, ideas: state.ideas, media: state.media, queue: state.queue, logs: state.logs, critic: state.critic }; }
       function scheduleWorkspaceSave() { if (!serverSyncReady || !token()) return; clearTimeout(serverSaveTimer); serverSaveTimer = setTimeout(pushWorkspace, 800); }
       async function pushWorkspace() { if (!token()) return; try { await request("/api/workspace", { method: "PUT", body: { workspace: workspacePayload() } }); } catch (e) { } }
-      async function fetchWorkspace() { if (!token()) return; try { const data = await request("/api/workspace"); serverSyncReady = true; if (data.workspace && data.workspace.projects) { state = { ...state, ...data.workspace }; ensurePlanner(); saveState(); render(); } } catch (e) { serverSyncReady = true; render(); } }
+      async function fetchWorkspace() { if (!token()) return; try { const data = await request("/api/workspace"); serverSyncReady = true; if (data.workspace && data.workspace.projects) { state = { ...state, ...data.workspace }; if (data.limitInfo) state.limitInfo = data.limitInfo; if (data.openaiReady !== undefined) state.settings.openaiReady = data.openaiReady; ensurePlanner(); saveState(); render(); } } catch (e) { serverSyncReady = true; render(); } }
       async function checkBackend(withToast = true) { try { const data = await request("/api/health", { public: true }); state.settings.backendStatus = data.ok ? "работает" : "ошибка"; if (withToast) showToast("Сервер ОК"); render(); } catch (e) { state.settings.backendStatus = "ошибка"; if (withToast) showToast("Ошибка сервера"); render(); } }
       async function fetchConfig() { if (!token()) return; try { const data = await request("/api/config"); state.settings = { ...state.settings, ...data }; render(); } catch (e) { } }
       async function saveServerConfig() { setBusy(true); try { await request("/api/config", { method: "POST", body: { telegramBotToken: state.settings.telegramBotToken, telegramChatId: state.settings.telegramChatId } }); showToast("Сохранено"); await fetchConfig(); } catch (e) { showToast("Ошибка"); } finally { setBusy(false); render(); } }
-      async function checkAiKey() { setBusy(true); try { await request("/api/ai/test", { method: "POST" }); showToast("ИИ работает"); } catch (e) { showToast("Ошибка ИИ"); } finally { setBusy(false); } }
+      async function checkAiKey() { setBusy(true); try { await request("/api/ai/test", { method: "POST" }); state.settings.openaiReady = true; showToast("ИИ работает"); render(); } catch (e) { state.settings.openaiReady = false; showToast("Ошибка ИИ"); render(); } finally { setBusy(false); } }
       function applyProjectPatch(patch = {}) {
         const project = activeProject();
         Object.entries(patch).forEach(([key, value]) => {
@@ -2850,11 +3041,49 @@
       /* Modals */
       function openQueueModal(id) {
         const p = state.queue.find(q => q.id === id); if (!p) return;
+        const mediaOptions = [
+          `<option value="">Без файла</option>`,
+          ...state.media.map(m => `<option value="${m.id}" ${p.mediaId === m.id ? 'selected' : ''}>${escapeHtml(m.name)}</option>`)
+        ].join("");
+
         mountModal(`
-          <div class="modal-backdrop" data-action="close-modal"><div class="modal-card"><div class="modal-head"><h2 class="modal-title">Редактировать</h2><button class="btn icon-only" data-action="close-modal">${icons.close}</button></div><div class="modal-body"><div class="form">
+          <div class="modal-backdrop"><div class="modal-card"><div class="modal-head"><h2 class="modal-title">Редактировать публикацию</h2><button class="btn icon-only" data-action="close-modal">${icons.close}</button></div><div class="modal-body" onclick="event.stopPropagation();"><div class="form">
             <label class="field"><span class="label">Заголовок</span><input class="input" id="editQTitle" value="${escapeHtml(p.title)}"></label>
-            <label class="field"><span class="label">Текст</span><textarea class="textarea" id="editQBody">${escapeHtml(p.body)}</textarea></label>
-            <button class="btn primary" data-action="save-queue" data-id="${p.id}">Сохранить</button>
+            <label class="field"><span class="label">Текст</span><textarea class="textarea" id="editQBody" style="min-height: 120px;">${escapeHtml(p.body)}</textarea></label>
+            
+            <div class="auto-tight">
+              <label class="field">
+                <span class="label">Площадка</span>
+                <select class="select" id="editQPlatform">
+                  <option value="telegram" ${p.platform === "telegram" ? "selected" : ""}>Telegram</option>
+                  <option value="instagram" ${p.platform === "instagram" ? "selected" : ""}>Instagram Reels</option>
+                  <option value="youtube" ${p.platform === "youtube" ? "selected" : ""}>YouTube Shorts</option>
+                </select>
+              </label>
+              
+              <label class="field">
+                <span class="label">Статус</span>
+                <select class="select" id="editQStatus">
+                  <option value="scheduled" ${p.status === "scheduled" ? "selected" : ""}>Запланировано</option>
+                  <option value="published" ${p.status === "published" ? "selected" : ""}>Опубликовано</option>
+                  <option value="error" ${p.status === "error" ? "selected" : ""}>Ошибка</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="auto-tight">
+              <label class="field"><span class="label">Дата</span><input class="input" type="date" id="editQDate" value="${escapeHtml(p.publishDate || "")}"></label>
+              <label class="field"><span class="label">Время</span><input class="input" type="time" id="editQTime" value="${escapeHtml(p.publishTime || "")}"></label>
+            </div>
+
+            <label class="field">
+              <span class="label">Прикрепленный медиа-файл</span>
+              <select class="select" id="editQMediaId">
+                ${mediaOptions}
+              </select>
+            </label>
+
+            <button class="btn primary" data-action="save-queue" data-id="${p.id}" style="margin-top: 16px;">Сохранить изменения</button>
           </div></div></div></div>
         `);
       }
@@ -2864,7 +3093,15 @@
         const t = e.target.closest("[data-action]"); if (!t) return;
         const a = t.dataset.action;
 
-        if (a === "close-modal") { el.modalRoot.innerHTML = ""; return; }
+        if (a === "close-modal") {
+          const isBackdrop = e.target.classList.contains("modal-backdrop");
+          const isCloseBtn = e.target.closest('button[data-action="close-modal"]');
+          if (isBackdrop || isCloseBtn) {
+            el.modalRoot.innerHTML = "";
+            if (lastFocusedBeforeModal) lastFocusedBeforeModal.focus();
+          }
+          return;
+        }
         if (a === "toggle-burger") { toggleNavMenu(); return; }
         if (a === "tab") { state.activeTab = t.dataset.tab; closeNavMenu(); render(); return; }
         if (a === "logout") { logout(); return; }
@@ -2877,18 +3114,48 @@
         if (a === "select-idea") { state.selectedIdeaId = t.dataset.id; render(); return; }
         if (a === "select-platform") { state.activePlatform = t.dataset.platform; render(); return; }
         if (a === "add-to-queue") { addToQueue(); return; }
-        if (a === "remove-queue") { state.queue = state.queue.filter(q => q.id !== t.dataset.id); render(); return; }
-        if (a === "clear-queue") { state.queue = []; render(); return; }
+        if (a === "remove-queue") {
+          if (confirm("Вы действительно хотите удалить эту публикацию из очереди?")) {
+            state.queue = state.queue.filter(q => q.id !== t.dataset.id);
+            render();
+          }
+          return;
+        }
+        if (a === "clear-queue") {
+          if (confirm("Вы действительно хотите очистить всю очередь запланированных публикаций?")) {
+            state.queue = [];
+            render();
+          }
+          return;
+        }
         if (a === "publish-one") { publishOne(t.dataset.id); return; }
         if (a === "open-queue") { openQueueModal(t.dataset.id); return; }
         if (a === "save-queue") {
           const p = state.queue.find(q => q.id === t.dataset.id);
-          if (p) { p.title = document.getElementById("editQTitle").value; p.body = document.getElementById("editQBody").value; }
+          if (p) {
+            p.title = document.getElementById("editQTitle").value;
+            p.body = document.getElementById("editQBody").value;
+            p.platform = document.getElementById("editQPlatform").value;
+            p.status = document.getElementById("editQStatus").value;
+            p.state = p.status === "published" ? "Опубликовано" : p.status === "error" ? "Ошибка" : "Запланировано";
+            p.publishDate = document.getElementById("editQDate").value;
+            p.publishTime = document.getElementById("editQTime").value;
+            p.scheduledAt = `${p.publishDate}T${p.publishTime}`;
+            p.mediaId = document.getElementById("editQMediaId").value || "";
+            saveState();
+          }
           el.modalRoot.innerHTML = ""; render(); return;
         }
         if (a === "upload-media") { uploadMedia(); return; }
         if (a === "select-media-card") { state.selectedMediaId = t.dataset.id; showToast("Выбрано"); render(); return; }
-        if (a === "delete-media") { state.media = state.media.filter(m => m.id !== t.dataset.id); render(); return; }
+        if (a === "delete-media") {
+          if (confirm("Вы действительно хотите удалить этот медиафайл?")) {
+            state.media = state.media.filter(m => m.id !== t.dataset.id);
+            if (state.selectedMediaId === t.dataset.id) state.selectedMediaId = "";
+            render();
+          }
+          return;
+        }
         if (a === "toggle-brief-mode") {
           state.briefMode = t.dataset.mode;
           saveState();
@@ -2896,7 +3163,18 @@
           return;
         }
         if (a === "new-project") { const id = uid("p"); state.projects.unshift({ id, name: "Новый проект", briefText: "", niche: "", offer: "", audience: "", pain: "", proof: "", common: "", tone: "", details: "", price: "", timelines: "", warranty: "", geo: "", landingPage: "", awareness: "Теплый", fear: "", reason: "", facts: "", goal: "", nextStep: "", leadMagnet: "", stopWords: "", competitors: "", advantages: "" }); state.activeProjectId = id; render(); return; }
-        if (a === "delete-project") { if (state.projects.length > 1) { state.projects = state.projects.filter(p => p.id !== state.activeProjectId); state.activeProjectId = state.projects[0].id; render(); } return; }
+        if (a === "delete-project") {
+          if (state.projects.length > 1) {
+            if (confirm("Вы действительно хотите полностью удалить этот проект и все его настройки?")) {
+              state.projects = state.projects.filter(p => p.id !== state.activeProjectId);
+              state.activeProjectId = state.projects[0].id;
+              render();
+            }
+          } else {
+            showToast("Нельзя удалить единственный проект");
+          }
+          return;
+        }
         if (a === "select-project") { state.activeProjectId = t.dataset.id; render(); return; }
         if (a === "check-backend") { checkBackend(); return; }
         if (a === "check-ai-key") { checkAiKey(); return; }
@@ -2911,9 +3189,50 @@
         if (a === "refine-rsy") { refineText("adapt-rsy"); return; }
         if (a === "refine-reels") { refineText("adapt-reels"); return; }
         if (a === "clear-workspace-all") {
-          state.ideas = []; state.queue = []; state.media = []; state.logs = []; state.critic = null;
-          state.projects = [{ id: "p_1", name: "Новый", briefText: "", niche: "", offer: "", audience: "", pain: "", proof: "", common: "", tone: "", details: "", price: "", timelines: "", warranty: "", geo: "", landingPage: "", awareness: "Теплый", fear: "", reason: "", facts: "", goal: "", nextStep: "", leadMagnet: "", stopWords: "", competitors: "", advantages: "" }]; state.activeProjectId = "p_1";
-          render(); showToast("Очищено"); return;
+          if (confirm("Вы действительно хотите полностью очистить рабочую область? Это удалит все проекты, идеи, медиафайлы и очередь публикаций!")) {
+            state.ideas = []; state.queue = []; state.media = []; state.logs = []; state.critic = null;
+            state.projects = [{ id: "p_1", name: "Новый", briefText: "", niche: "", offer: "", audience: "", pain: "", proof: "", common: "", tone: "", details: "", price: "", timelines: "", warranty: "", geo: "", landingPage: "", awareness: "Теплый", fear: "", reason: "", facts: "", goal: "", nextStep: "", leadMagnet: "", stopWords: "", competitors: "", advantages: "" }]; state.activeProjectId = "p_1";
+            saveState();
+            render();
+            showToast("Рабочая область полностью очищена");
+          }
+          return;
+        }
+        if (a === "kanban-to-editor") {
+          state.selectedIdeaId = t.dataset.id;
+          state.activeTab = "factory";
+          saveState();
+          render();
+          showToast("Открыто в редакторе");
+          return;
+        }
+        if (a === "kanban-to-queue") {
+          const idea = state.ideas.find(i => i.id === t.dataset.id);
+          if (idea) {
+            const p = ensurePlanner();
+            state.queue.unshift({
+              id: uid("q"),
+              projectId: state.activeProjectId,
+              platform: state.activePlatform || "telegram",
+              title: idea.title,
+              body: idea.formats?.[state.activePlatform]?.body || idea.formats?.telegram?.body || idea.title,
+              tags: idea.formats?.[state.activePlatform]?.tags || "",
+              mediaId: state.selectedMediaId || "",
+              status: "scheduled",
+              state: "Запланировано",
+              publishDate: p.publishDate,
+              publishTime: p.publishTime,
+              scheduledAt: `${p.publishDate}T${p.publishTime}`
+            });
+            saveState();
+            render();
+            showToast("Добавлено в очередь");
+          }
+          return;
+        }
+        if (a === "kanban-editor-to-queue") {
+          addToQueue();
+          return;
         }
       });
 
@@ -2937,6 +3256,7 @@
         if (t.matches('[data-action="apply-template-select"]')) { applyTemplateById(t.value); render(); }
         if (t.matches('[data-action="setting-input"]')) { state.settings[t.name] = t.value; saveState(); scheduleWorkspaceSave(); }
         if (t.matches('[data-action="select-media"]')) { state.selectedMediaId = t.value; saveState(); }
+        if (t.matches('[data-action="sidebar-select-project"]')) { state.activeProjectId = t.value; render(); }
       });
     });
   </script>
