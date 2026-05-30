@@ -1,0 +1,85 @@
+# AI Coding Rules for "Контент-завод" (Content Factory)
+
+You are an expert AI software engineer pair programming with the user to develop "Контент-завод" — a high-converting, premium SPA hosted web app built on **Vanilla HTML/CSS/JS** with a dark, premium dashboard UI.
+
+---
+
+## 1. Core Technical Architecture
+- **Language Stack**: Clean HTML5, Vanilla CSS3 (with custom design tokens), and Vanilla JavaScript (ES Modules).
+- **Zero Heavy Frameworks**: Do NOT pull in React, Next.js, Vue, TailwindCSS, Bootstrap, or jQuery. Keep the application lightweight, blazing fast, and dependency-free.
+- **Single Page Application (SPA)**: All dashboard sections (Projects, Generator, Queue, Media, Settings, Logs) reside inside a single elegant dashboard shell.
+- **Client & Server Integration**: Interacts securely with the Express backend on `/api`. Credentials and keys are handled exclusively on the server side to maintain top-tier safety.
+
+---
+
+## 2. Premium Design System & Typography
+Always use the established CSS design tokens defined in `:root`:
+- **Typography**: 
+  - Body: `Plus Jakarta Sans`, Arial, sans-serif
+  - Headings & Accents: `Bricolage Grotesque`, sans-serif
+  - Code & Metadata: `Roboto Mono`, monospace
+- **Color Palette (Harmonious Dark Mode)**:
+  - Base Backgrounds: `--bg: #0b0c10`, `--bg-2: #14151a`, `--bg-3: #1f2029`
+  - Lines & Borders: `--line: #2e2f38`, `--line-strong: #424452`
+  - Highlighting Gradients: Cyan (`#06b6d4`), Blue (`#3b82f6`), Yellow (`#f59e0b`), Green (`#10b981`), Red (`#ef4444`).
+- **Glassmorphism**: Use `backdrop-filter: blur(22px)` and translucent backgrounds (`rgba(255, 255, 255, 0.05)`) for premium overlays, headers, and modals.
+- **Transitions**: Subtle hover transitions on borders, scale click micro-animations (`transform: scale(0.97)`), and smooth scrolling.
+
+---
+
+## 3. Responsive Layout & Mobile First Guidelines
+To avoid breaking the layout across different viewports, strictly adhere to the following rules:
+- **No `width: 100vw`**: Never use `100vw` as it triggers a horizontal scrollbar. Use `width: 100%` or `min(container, 100% - gap)`.
+- **Prevent Flex/Grid Blowouts**: Always set `min-width: 0` or `min-height: 0` on flex/grid child items to allow text truncation and responsive shrinkage.
+- **Fluid Layouts**: Use CSS `clamp()`, `minmax()`, and `flex-wrap` instead of dry media-queries wherever possible.
+- **Responsive Mobile Navigation**: On mobile (`max-width: 760px`), hide navbar button text (`.nav-btn span { display: none; }`) to elegantly show only icons.
+- **Mobile Card Snap**: Avoid endless scrolling on small viewports by grouping cards (e.g., Ideas, Queue) into horizontally scroll-snapping card decks:
+  ```css
+  .mobile-scroll {
+    display: flex !important;
+    overflow-x: auto !important;
+    scroll-snap-type: x mandatory !important;
+    gap: 14px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-scroll > * {
+    min-width: min(84vw, 350px) !important;
+    scroll-snap-align: start !important;
+    flex: 0 0 auto !important;
+  }
+  ```
+
+---
+
+## 4. Accessibility & Quality Checklist
+Every new component, refactor, or style adjustment must pass this checklist before deployment:
+- **Keyboard Access**: Form fields, buttons, and custom dropdowns must be fully navigable via keyboard (`Tab`, `Space`, `Enter`). Focus states must have a visible `focus-visible` outline.
+- **Modal Modifiers**: Modals must scroll *internally* within the screen viewport and not overflow/push the main page body.
+- **Viewport Emulation Testing**: Test visual aesthetics and layout behavior on the following viewports:
+  - **Desktop (Wide)**: 1920×1080
+  - **Desktop (Standard)**: 1440×900
+  - **Notebook**: 1366×768, 1280×720
+  - **Tablet**: 1024×768 (landscape), 768×1024 (portrait)
+  - **Mobile (Large)**: 430×932, 414×896
+  - **Mobile (Typical)**: 390×844, 375×812
+  - **Mobile (Small)**: 360×740
+- **No Text Overflows**: Ensure long titles, descriptions, and AI generation metadata are wrapped correctly using `overflow-wrap: break-word` and `word-break: normal`.
+
+---
+
+## 5. Engineering Reference Base
+When designing new dashboard features, draw structural patterns from these vetted open-source reference bases (do not copy design or assets, just study the engineering pattern):
+- **Dashboard Shells**: `tabler/tabler` / `PlainAdmin` / `puikinsh/adminator-admin-dashboard`
+- **Accessible Widgets**: `w3c/wai-aria-practices` / `bejamas/data-slot`
+- **Responsive Navigation**: `stevenhughes08/vanilla-js-navbar`
+- **Advanced Lists & Sorting**: `jerrylow/basictable` / `matejkadlec/vanilla-table`
+- **Kanban Board Mechanics**: `ArtemSam23/Kanban` / `flowforfrank/drag-n-drop`
+- **PWA & Offline Fallbacks**: `pwa-builder/pwa-starter-basic`
+
+---
+
+## 6. Prohibited Actions
+- **Do NOT** load external CSS frameworks (Tailwind, Bootstrap) dynamically.
+- **Do NOT** use hardcoded pixel widths on main layout wrapper columns.
+- **Do NOT** store secret server-side tokens in client `localStorage`.
+- **Do NOT** skip mobile testing. Mobile first is paramount.
