@@ -5,5 +5,10 @@ content-factory-timeweb-fix.zip
 .DS_Store
 *.log
 users.json
-uploads/
-data/
+uploads/*
+!uploads/.gitkeep
+data/*
+!data/.gitkeep
+!data/uploads/
+data/uploads/*
+!data/uploads/.gitkeep

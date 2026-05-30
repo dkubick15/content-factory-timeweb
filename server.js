@@ -100,7 +100,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 const DEFAULT_AI_MODEL = process.env.DEFAULT_MODEL || process.env.DEFAULT_AI_MODEL || "timeweb-agent";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
@@ -2680,7 +2680,7 @@ async function seedDemoUsers() {
   }
 }
 
-const server = app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, () => {
   console.log(`Content Factory backend ${APP_BUILD} started on port ${PORT}`);
   console.log(`[Startup] NODE_ENV=${process.env.NODE_ENV || "development"} DATA_DIR=${DATA_DIR}`);
 

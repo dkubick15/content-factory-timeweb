@@ -13,9 +13,9 @@ COPY . .
 # Ensure the data directory and uploads directory exist and have relaxed permissions
 RUN mkdir -p /app/data /app/data/uploads && chmod -R 777 /app/data
 
-EXPOSE 3000
+EXPOSE 8080
 
-ENV PORT=3000 \
+ENV PORT=8080 \
     NODE_ENV=production
 
 CMD ["node", "server.js"]

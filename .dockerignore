@@ -4,7 +4,10 @@ npm-debug.log*
 .env
 .env.*
 timeweb-env-ready.env
-uploads
-data
+uploads/*
+!uploads/.gitkeep
+data/*
+!data/.gitkeep
+!data/uploads/
 .git
 .gitignore
