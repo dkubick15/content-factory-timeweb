@@ -1246,6 +1246,7 @@
         activeTemplateId: "telegram-sales",
         activeProjectId: "p_1",
         activePlatform: "telegram",
+        briefMode: "text",
         selectedIdeaId: "",
         selectedMediaId: "",
         busy: false,
@@ -1279,6 +1280,14 @@
             id: "p_1",
             name: "Новый проект",
             briefText: "",
+            niche: "",
+            offer: "",
+            audience: "",
+            pain: "",
+            proof: "",
+            common: "",
+            tone: "",
+            details: "",
             status: "активный"
           }
         ],
@@ -1331,6 +1340,7 @@
           merged.settings = { ...clone(defaultState.settings), ...(parsed.settings || {}) };
           merged.planner = { ...clone(defaultState.planner), ...(parsed.planner || {}) };
           merged.activeTemplateId = parsed.activeTemplateId || defaultState.activeTemplateId;
+          merged.briefMode = parsed.briefMode || defaultState.briefMode;
           if (merged.planner.publishDate === undefined || merged.planner.publishDate === null) merged.planner.publishDate = todayInputValue();
           if (merged.planner.publishTime === undefined || merged.planner.publishTime === null) merged.planner.publishTime = nextHourInputValue();
           merged.settings.openaiApiKey = "";
@@ -1736,11 +1746,53 @@
                   <span class="label">Название проекта</span>
                   <input class="input" data-action="project-input" name="name" value="${escapeHtml(project.name)}" />
                 </label>
-                <label class="field">
-                  <span class="label">Бриф (ниша, оффер, боль)</span>
-                  <textarea class="textarea" data-action="project-input" name="briefText">${escapeHtml(project.briefText || "")}</textarea>
-                </label>
-                <button class="btn" data-action="copy-brief-template">${icons.copy} Скопировать шаблон брифа</button>
+
+                <!-- Brief mode toggle buttons -->
+                <div class="brief-toggle" style="display: flex; gap: 4px; margin-top: 12px; margin-bottom: 12px; background: rgba(255,255,255,0.03); padding: 4px; border-radius: var(--radius); border: 1px solid var(--border);">
+                  <button class="btn sm ${state.briefMode !== 'fields' ? 'primary' : ''}" data-action="toggle-brief-mode" data-mode="text" type="button" style="flex: 1; font-size: 11px; padding: 4px 6px; border: none; min-height: 28px; line-height: 1;">Один текст</button>
+                  <button class="btn sm ${state.briefMode === 'fields' ? 'primary' : ''}" data-action="toggle-brief-mode" data-mode="fields" type="button" style="flex: 1; font-size: 11px; padding: 4px 6px; border: none; min-height: 28px; line-height: 1;">По полям</button>
+                </div>
+
+                ${state.briefMode !== "fields" ? `
+                  <label class="field">
+                    <span class="label">Бриф (ниша, оффер, боли)</span>
+                    <textarea class="textarea" data-action="project-input" name="briefText" style="min-height: 140px;">${escapeHtml(project.briefText || "")}</textarea>
+                  </label>
+                  <button class="btn" data-action="copy-brief-template" style="margin-bottom: 8px;">${icons.copy} Скопировать шаблон брифа</button>
+                ` : `
+                  <label class="field" style="margin-bottom: 10px;">
+                    <span class="label" style="font-size: 11px; text-transform: uppercase; opacity: 0.8;">Ниша</span>
+                    <input class="input" data-action="project-input" name="niche" placeholder="Натяжные потолки, клининг, ремонт..." value="${escapeHtml(project.niche || "")}" />
+                  </label>
+                  <label class="field" style="margin-bottom: 10px;">
+                    <span class="label" style="font-size: 11px; text-transform: uppercase; opacity: 0.8;">Что продвигаем / Оффер</span>
+                    <input class="input" data-action="project-input" name="offer" placeholder="Скидка 15% до конца недели, бесплатный замер..." value="${escapeHtml(project.offer || "")}" />
+                  </label>
+                  <label class="field" style="margin-bottom: 10px;">
+                    <span class="label" style="font-size: 11px; text-transform: uppercase; opacity: 0.8;">Целевая аудитория</span>
+                    <input class="input" data-action="project-input" name="audience" placeholder="Новоселы в ЖК, мамы в декрете..." value="${escapeHtml(project.audience || "")}" />
+                  </label>
+                  <label class="field" style="margin-bottom: 10px;">
+                    <span class="label" style="font-size: 11px; text-transform: uppercase; opacity: 0.8;">Главная боль аудитории</span>
+                    <input class="input" data-action="project-input" name="pain" placeholder="Боятся переплат, некачественного монтажа..." value="${escapeHtml(project.pain || "")}" />
+                  </label>
+                  <label class="field" style="margin-bottom: 10px;">
+                    <span class="label" style="font-size: 11px; text-transform: uppercase; opacity: 0.8;">Факты и УТП (для постов)</span>
+                    <textarea class="textarea" data-action="project-input" name="proof" placeholder="Договор, 5 лет гарантии, 3200+ клиентов, только проверенные мастера..." style="min-height: 60px; font-size: 12px; line-height: 1.4;">${escapeHtml(project.proof || "")}</textarea>
+                  </label>
+                  <label class="field" style="margin-bottom: 10px;">
+                    <span class="label" style="font-size: 11px; text-transform: uppercase; opacity: 0.8;">Стоп-слова / Что писать нельзя</span>
+                    <input class="input" data-action="project-input" name="common" placeholder="Уникальный, профессиональный, качественный..." value="${escapeHtml(project.common || "")}" />
+                  </label>
+                  <label class="field" style="margin-bottom: 10px;">
+                    <span class="label" style="font-size: 11px; text-transform: uppercase; opacity: 0.8;">Тон общения / Стиль</span>
+                    <input class="input" data-action="project-input" name="tone" placeholder="Коротко и экспертно, с юмором, дружелюбно..." value="${escapeHtml(project.tone || "")}" />
+                  </label>
+                  <label class="field" style="margin-bottom: 10px;">
+                    <span class="label" style="font-size: 11px; text-transform: uppercase; opacity: 0.8;">Тема на сегодня (детали)</span>
+                    <input class="input" data-action="project-input" name="details" placeholder="Например: почему дешевый профиль желтеет..." value="${escapeHtml(project.details || "")}" />
+                  </label>
+                `}
 
                 <div style="border-top: 1px solid var(--border); margin: 8px 0; padding-top: 16px;">
                   <h3 class="title-sm">Параметры генерации</h3>
@@ -2169,7 +2221,13 @@
         if (a === "upload-media") { uploadMedia(); return; }
         if (a === "select-media-card") { state.selectedMediaId = t.dataset.id; showToast("Выбрано"); render(); return; }
         if (a === "delete-media") { state.media = state.media.filter(m => m.id !== t.dataset.id); render(); return; }
-        if (a === "new-project") { const id = uid("p"); state.projects.unshift({ id, name: "Новый проект", briefText: "" }); state.activeProjectId = id; render(); return; }
+        if (a === "toggle-brief-mode") {
+          state.briefMode = t.dataset.mode;
+          saveState();
+          render();
+          return;
+        }
+        if (a === "new-project") { const id = uid("p"); state.projects.unshift({ id, name: "Новый проект", briefText: "", niche: "", offer: "", audience: "", pain: "", proof: "", common: "", tone: "", details: "" }); state.activeProjectId = id; render(); return; }
         if (a === "delete-project") { if (state.projects.length > 1) { state.projects = state.projects.filter(p => p.id !== state.activeProjectId); state.activeProjectId = state.projects[0].id; render(); } return; }
         if (a === "select-project") { state.activeProjectId = t.dataset.id; render(); return; }
         if (a === "check-backend") { checkBackend(); return; }
@@ -2180,7 +2238,7 @@
         if (a === "copy-brief-template") { copyText("Ниша:\nОффер:\nАудитория:\nБоль:\nФакт/Доказательство:"); return; }
         if (a === "clear-workspace-all") {
           state.ideas = []; state.queue = []; state.media = []; state.logs = [];
-          state.projects = [{ id: "p_1", name: "Новый", briefText: "" }]; state.activeProjectId = "p_1";
+          state.projects = [{ id: "p_1", name: "Новый", briefText: "", niche: "", offer: "", audience: "", pain: "", proof: "", common: "", tone: "", details: "" }]; state.activeProjectId = "p_1";
           render(); showToast("Очищено"); return;
         }
       });

@@ -1411,7 +1411,15 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
     const ideaCount = Math.max(1, Math.min(Number(settings?.ideaCount || 10), 20));
     const safeProject = {
       name: cleanText(project.name, 180),
-      briefText: cleanText(project.briefText, 12000)
+      briefText: cleanText(project.briefText, 12000),
+      niche: cleanText(project.niche || "", 240),
+      offer: cleanText(project.offer || "", 1000),
+      audience: cleanText(project.audience || "", 1000),
+      pain: cleanText(project.pain || "", 1000),
+      common: cleanText(project.common || "", 1000),
+      proof: cleanText(project.proof || "", 1000),
+      tone: cleanText(project.tone || "", 240),
+      details: cleanText(project.details || "", 1000)
     };
     const safeSettings = {
       objective: cleanText(settings?.objective || "заявка", 240),
@@ -1463,12 +1471,32 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
       "Если информации в брифе мало или он полностью пустой, сгенерируй идеи на основе названия проекта или на свое усмотрение для этой тематики, но обязательно верни строго валидный JSON по указанной схеме."
     ].join(" ");
 
+    let briefSection = "";
+    if (safeProject.briefText && safeProject.briefText.trim()) {
+      briefSection = safeProject.briefText;
+    } else {
+      briefSection = [
+        safeProject.niche ? `- Ниша: ${safeProject.niche}` : "",
+        safeProject.offer ? `- Что продвигаем / Оффер: ${safeProject.offer}` : "",
+        safeProject.audience ? `- Целевая аудитория: ${safeProject.audience}` : "",
+        safeProject.pain ? `- Боли и проблемы аудитории: ${safeProject.pain}` : "",
+        safeProject.common ? `- Что нельзя писать банально: ${safeProject.common}` : "",
+        safeProject.proof ? `- Факты и доказательства: ${safeProject.proof}` : "",
+        safeProject.tone ? `- Тон общения: ${safeProject.tone}` : "",
+        safeProject.details ? `- Тема или детали: ${safeProject.details}` : ""
+      ].filter(Boolean).join("\n");
+      
+      if (!briefSection) {
+        briefSection = "Нет подробного брифа.";
+      }
+    }
+
     const userPrompt = [
       `Сгенерируй ровно ${ideaCount} идею/идеи для контента в формате JSON.`,
       "",
       `Проект: ${safeProject.name || ""}`,
       `Вводные данные (Бриф):`,
-      safeProject.briefText ? safeProject.briefText : "Нет подробного брифа.",
+      briefSection,
       `Цель: ${safeSettings.objective}`,
       `Тон: ${safeSettings.style}`,
       "",
