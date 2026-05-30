@@ -1,0 +1,6 @@
+data/
+uploads/
+*.json
+*.log
+.git/
+node_modules/

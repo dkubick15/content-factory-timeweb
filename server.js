@@ -133,24 +133,21 @@ const TIMEWEB_ENV = resolveTimewebEnv();
 const TIMEWEB_API_KEY = TIMEWEB_ENV.apiKey;
 const TIMEWEB_AGENT_ID = TIMEWEB_ENV.agentId;
 
-let DATA_DIR = process.env.DATA_DIR;
+let DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+const targetDataDir = DATA_DIR;
 
-if (!DATA_DIR) {
-  const localDataDir = path.join(process.cwd(), "data");
-  try {
-    if (!fs.existsSync(localDataDir)) {
-      fs.mkdirSync(localDataDir, { recursive: true });
-    }
-    // Проверяем возможность записи в эту папку
-    const testFile = path.join(localDataDir, ".write_test");
-    fs.writeFileSync(testFile, "test", "utf8");
-    fs.unlinkSync(testFile);
-    DATA_DIR = localDataDir;
-  } catch (e) {
-    // Если папка read-only (как на Timeweb без смонтированного диска), откатываемся на /tmp
-    console.warn("Локальная папка data недоступна для записи, используем /tmp/content-factory-data:", e.message);
-    DATA_DIR = path.join("/tmp", "content-factory-data");
+try {
+  if (!fs.existsSync(targetDataDir)) {
+    fs.mkdirSync(targetDataDir, { recursive: true });
   }
+  // Проверяем возможность записи в эту папку
+  const testFile = path.join(targetDataDir, ".write_test");
+  fs.writeFileSync(testFile, "test", "utf8");
+  fs.unlinkSync(testFile);
+} catch (e) {
+  // Если папка read-only (как на Timeweb без смонтированного диска), откатываемся на /tmp
+  console.warn(`Папка data (${targetDataDir}) недоступна для записи, используем /tmp/content-factory-data:`, e.message);
+  DATA_DIR = path.join("/tmp", "content-factory-data");
 }
 
 const usersFile = path.join(DATA_DIR, "users.json");
@@ -1461,7 +1458,9 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
       `Твоя задача - превращать бриф в готовые материалы только для выбранной площадки (${platformLabel}).`,
       "Пиши емко, конкретно, без воды, без англицизмов, без длинного тире.",
       "Не придумывай несуществующие факты. Если факта нет, используй аккуратную формулировку без цифр.",
-      "Ответ только валидный JSON: начинается с { и заканчивается }."
+      "Ответ должен быть СТРОГО валидным JSON-объектом: начинаться с { и заканчиваться }.",
+      "Тебе КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать любые вводные или пояснительные слова, задавать вопросы пользователю или просить уточнения.",
+      "Если информации в брифе мало или он полностью пустой, сгенерируй идеи на основе названия проекта или на свое усмотрение для этой тематики, но обязательно верни строго валидный JSON по указанной схеме."
     ].join(" ");
 
     const userPrompt = [
@@ -1623,15 +1622,16 @@ async function enhancePromptWithAi(userPrompt) {
     return userPrompt;
   }
   try {
-    const systemPrompt = `You are a professional prompt engineer for AI image generators (like Midjourney, Stable Diffusion, Pollinations).
-Your task is to take a description of an image in Russian (or any other language) and translate/expand it into a highly detailed, professional, photography-centric prompt in English.
-Make it vivid, state the style (e.g., professional commercial photography, cinematic lighting, 8k, highly detailed, realistic, award-winning composition), details, lighting, and camera settings.
-Do not include any chat prefix, introduction, or markdown styling. Just output the final English prompt string.`;
+    const systemPrompt = `You are a professional prompt engineer for AI image generators (such as Midjourney, Stable Diffusion, Pollinations).
+Your task is to take the input text (which can be a short Russian image description, a post headline, or a full article/post text) and generate a highly detailed, professional, photography-centric prompt in English that perfectly illustrates the subject.
+If the input text is a post or article, analyze its key theme/concept and design a highly compelling, professional commercial illustration or dramatic photo concept that fits the article perfectly.
+Vividly describe the style (e.g., professional commercial photography, cinematic lighting, 8k, highly detailed, realistic, award-winning composition), subject, details, lighting, and camera settings.
+Do not include any conversational prefix, introductory chat, explanation, questions, or markdown formatting. Output ONLY the final English prompt string.`;
 
     const requestPayload = {
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Expand this prompt: "${userPrompt}"` }
+        { role: "user", content: `Generate a detailed English image prompt to illustrate the following text: "${userPrompt}"` }
       ]
     };
     
