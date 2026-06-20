@@ -35,6 +35,6 @@ ENV DATA_DIR=/app/data
 
 EXPOSE 8080
 
-USER app
+# USER app
 
 CMD ["node", "server.js"]
