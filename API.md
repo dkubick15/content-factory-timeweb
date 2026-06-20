@@ -1,97 +1,99 @@
-# API
+# API «Контент-завод»
+
+Все защищённые эндпоинты требуют заголовок `Authorization: Bearer <token>`.
+Авторизация — rate-limited. Запросы к ИИ и публикациям — отдельные лимиты.
 
 ## GET /api/health
-
-Проверка backend. Возвращает статус сервиса и подключение Timeweb-агента.
-
-По умолчанию не раскрывает пользователей, порт, источники env и ID агента. Для временной диагностики можно включить `DEBUG_HEALTH=true`.
+Проверка backend. Возвращает `ok`. Расширенная диагностика (пользователи, порт, ID агента, источники env) включается через `DEBUG_HEALTH=true`.
 
 ## POST /api/auth/register
-
-Ограничен rate limit, чтобы защитить регистрацию и вход от перебора.
+Ограничен rate limit. Регистрация нового аккаунта.
 
 ```json
-{
-  "email": "user@example.com",
-  "password": "123456"
-}
+{ "email": "user@example.com", "password": "123456" }
 ```
 
 ## POST /api/auth/login
-
-Ограничен rate limit, чтобы защитить регистрацию и вход от перебора.
+Ограничен rate limit. При `ENABLE_DEMO_LOGIN=true` поддерживает демо-аккаунты (`DEMO_EMAIL`, `CLIENT_DEMO_EMAIL`, `TEST_DEMO_EMAIL`).
 
 ```json
-{
-  "email": "user@example.com",
-  "password": "123456"
-}
+{ "email": "user@example.com", "password": "123456" }
 ```
 
-## GET /api/config
+## GET /api/auth/me
+Текущий профиль пользователя.
 
-Требует Bearer token. Возвращает настройки аккаунта, статус Timeweb-агента и настройки Telegram.
+## GET /api/config
+Настройки аккаунта: маскированный Timeweb-ключ, токены Telegram/Instagram, статус YouTube и OAuth, лимиты генераций.
 
 ## POST /api/config
-
-Требует Bearer token. Сохраняет только настройки Telegram-публикации.
+Сохранение Telegram- и Instagram-интеграций (токены шифруются). Замаскированные значения (содержат `...`/`***`) игнорируются.
 
 ```json
 {
   "telegramBotToken": "...",
-  "telegramChatId": "@channel"
+  "telegramChatId": "@channel",
+  "instagramAccessToken": "...",
+  "instagramUserId": "123456789"
 }
 ```
 
-## POST /api/ai/test
+## GET /api/auth/youtube
+Запускает OAuth-подключение YouTube (редирект в Google). Требует `YOUTUBE_CLIENT_ID`/`YOUTUBE_CLIENT_SECRET`.
 
-Требует Bearer token. Проверяет, отвечает ли Timeweb-агент, настроенный через `TIMEWEB_API_KEY` и `TIMEWEB_AGENT_ID` на сервере. Ограничен AI rate limit.
+## GET /api/auth/youtube/callback
+Callback OAuth: сохраняет `refresh_token` и `channelId` в профиле пользователя.
+
+## POST /api/auth/youtube/disconnect
+Отвязывает YouTube-аккаунт (очищает токен и ID канала).
+
+## POST /api/ai/test
+Проверяет подключение Timeweb-агента. Ограничен AI rate limit.
+
+## GET /api/workspace
+Рабочее пространство: проекты, идеи, медиа, очередь, логи, planner. Сервер нормализует и санитизирует данные.
+
+## PUT /api/workspace
+Полное обновление рабочего пространства (заменяет целиком).
+
+## POST /api/queue
+Добавляет/обновляет публикацию в очереди по `id`.
 
 ## POST /api/generate
-
-Требует Bearer token. Генерация контента идёт только через Timeweb-агента. Ограничен AI rate limit и дневным лимитом демо-клиента.
+Генерация контента через Timeweb-агента + ИИ-критик. Ограничен AI rate limit и дневным лимитом демо-аккаунтов.
 
 ```json
 {
-  "project": {
-    "name": "KUBIK.DM",
-    "niche": "перформанс-маркетинг",
-    "offer": "лендинг + Яндекс.Директ + аналитика",
-    "audience": "владельцы бизнеса",
-    "pain": "реклама тратит бюджет, но заявки не окупаются",
-    "common": "лендинг",
-    "proof": "первый экран, квиз, аналитика",
-    "tone": "прямой, экспертный, без воды"
-  },
-  "settings": {
-    "ideaCount": 10,
-    "style": "острый, экспертный, без воды",
-    "objective": "заявки"
-  },
-  "platform": "telegram"
+  "project": { "name": "...", "niche": "...", "offer": "..." },
+  "settings": { "ideaCount": 3, "style": "...", "objective": "..." },
+  "platform": "telegram",
+  "planner": { "publishDate": "2026-01-01", "publishTime": "12:00" }
 }
 ```
 
+## POST /api/refine
+Улучшение выделенного текста ИИ (`amplify-pain`, `add-proof`, `shorten`, `adapt-rsy`, `adapt-reels`). Ограничен AI rate limit.
+
+## POST /api/project/brief-template
+Генерация текстового шаблона брифа под выбранный формат.
+
+## POST /api/project/import-brief
+Разбор вставленного брифа по полям проекта (возвращает patch).
+
+## POST /api/project/import-url
+Загрузка и разбор сайта по URL, автозаполнение базы проекта.
+
 ## POST /api/upload
-
-Требует Bearer token. FormData: `file`, `projectId`. Ограничен publish/upload rate limit.
-
-## POST /api/publish/telegram
-
-Требует Bearer token. Публикация сгенерированного и отредактированного контента в привязанный Telegram-канал или чат. Ограничен publish/upload rate limit.
+Загрузка медиафайла (FormData: `file`, `projectId`). Только изображения/видео, лимит `MAX_UPLOAD_MB`.
 
 ## POST /api/generate-image
+Генерация изображения по тексту поста (через ИИ-улучшение промпта + Pollinations). Сохраняет в `/uploads`.
 
-Требует Bearer token. Генерирует изображение по промпту, сохраняет в `/uploads` и возвращает медиа-объект. Ограничен AI rate limit и дневным лимитом демо-клиента.
+## POST /api/publish/telegram
+Публикация в Telegram (текст и/или медиа). Ограничен publish/upload rate limit.
 
 ## POST /api/publish/instagram
-
-Требует Bearer token. Публикует Reels через Instagram Graph API. Нужны `instagramAccessToken`, `instagramUserId` и видео.
-
-## GET /api/auth/youtube
-
-Требует Bearer token. Запускает OAuth-подключение YouTube.
+Публикация Reels через Instagram Graph API. Требует `instagramAccessToken`, `instagramUserId` и видео.
 
 ## POST /api/publish/youtube
-
-Требует Bearer token. Загружает видео на YouTube через подключенный OAuth.
+Загрузка видео на YouTube через OAuth. Поддерживает отложенную публикацию через `scheduledAt`.

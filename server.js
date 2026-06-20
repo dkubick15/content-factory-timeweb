@@ -160,6 +160,7 @@ const usersFile = path.join(DATA_DIR, "users.json");
 const uploadsDir = path.join(DATA_DIR, "uploads");
 
 // Автоматическая генерация и сохранение надежного секрета сессий при первом запуске
+// ВНИМАНИЕ: никогда не используем временный/небезопасный секрет — иначе токены можно подделать.
 let APP_SECRET = process.env.APP_SECRET;
 if (!APP_SECRET) {
   const secretFile = path.join(DATA_DIR, "secret.key");
@@ -171,9 +172,15 @@ if (!APP_SECRET) {
       fs.writeFileSync(secretFile, APP_SECRET, "utf8");
     }
   } catch (e) {
-    console.error("Не удалось прочитать или записать secret.key, используем временный секрет:", e.message);
-    APP_SECRET = "temp_fallback_secret_string_not_secure";
+    console.error("КРИТИЧНО: не удалось прочитать или записать secret.key:", e.message);
+    console.error("Задай APP_SECRET в переменных окружения или обеспечь запись в DATA_DIR.");
+    process.exit(1);
   }
+}
+
+if (!APP_SECRET || APP_SECRET.length < 32) {
+  console.error("КРИТИЧНО: APP_SECRET слишком короткий или отсутствует. Используй минимум 32 символа.");
+  process.exit(1);
 }
 
 const corsOrigin = process.env.CORS_ORIGIN
@@ -260,7 +267,7 @@ const upload = multer({
       ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic",
       ".mp4", ".mov", ".avi", ".webm", ".mkv", ".mpeg", ".mpg", ".3gp"
     ];
-    
+
     const ext = path.extname(file.originalname || "").toLowerCase();
     const isMimeValid = allowedMimeRegex.test(file.mimetype || "");
     const isExtValid = allowedExts.includes(ext);
@@ -487,7 +494,7 @@ function getUserSettingsForServer(user) {
 
 function getUserSettingsForClient(user) {
   const serverSettings = getUserSettingsForServer(user);
-  
+
   const maskKey = (key) => {
     if (!key) return "";
     if (key.length <= 8) return "***";
@@ -554,7 +561,7 @@ async function callTimewebAgentApi(apiKey, agentId, payload, options = {}) {
   const activeAgentId = await resolveTimewebAgentId(apiKey, agentId);
   const url = `https://api.timeweb.cloud/api/v1/cloud-ai/agents/${encodeURIComponent(activeAgentId)}/call`;
   const messages = payload.messages || [];
-  
+
   // Собираем системные инструкции и пользовательский промпт в единый текст для агента
   let combinedPrompt = "";
   for (const msg of messages) {
@@ -829,7 +836,7 @@ function tryParseJson(value) {
   for (const attempt of attempts) {
     try {
       return JSON.parse(attempt);
-    } catch {}
+    } catch { }
   }
 
   return null;
@@ -1626,7 +1633,7 @@ app.post("/api/project/import-url", requireAuth, aiLimiter, async (req, res) => 
 
     const response = await fetch(parsedUrl.toString(), {
       headers: {
-        "User-Agent": "ContentFactoryBot/1.0 (+https://cf-kubik.pro)"
+        "User-Agent": "ContentFactoryBot/1.0 (+https://cf-kubik.twc1.net)"
       },
       signal: AbortSignal.timeout(15000)
     });
@@ -1866,7 +1873,7 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
     if (ideas.length > 0) {
       try {
         console.log("[AI-Critic] Запуск маркетинговой проверки контента...");
-        
+
         const criticSystemPrompt = `You are a strict, highly professional Conversion Rate Optimization (CRO) expert and master copywriter.
 Your task is to review the generated content package and evaluate it with extreme rigor.
 1. Scoring: Rate the package on a scale of 0-100 across 5 metrics:
@@ -1910,7 +1917,7 @@ ${JSON.stringify({ ideas }, null, 2)}
 
         const criticAiResult = await callTimewebAgentApi(timewebApiKey, timewebAgentId, criticRequestPayload);
         const criticText = criticAiResult.completion.choices?.[0]?.message?.content || "";
-        
+
         try {
           const polishedData = extractJson(criticText);
           if (polishedData && polishedData.ideas) {
@@ -2114,7 +2121,7 @@ Do not include any conversational prefix, introductory chat, explanation, questi
         { role: "user", content: `Generate a detailed image prompt to illustrate the following text: "${userPrompt}"` }
       ]
     };
-    
+
     const result = await callTimewebAgentApi(TIMEWEB_API_KEY, TIMEWEB_AGENT_ID, requestPayload);
     const enhanced = result?.completion?.choices?.[0]?.message?.content?.trim();
     if (enhanced && !looksLikeClarification(enhanced)) {
@@ -2137,7 +2144,7 @@ async function callImageGenerator(prompt) {
   if (!response.ok) {
     throw new Error(`Ошибка генерации изображения: ${response.statusText} (${response.status})`);
   }
-  
+
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
@@ -2182,7 +2189,7 @@ app.post("/api/generate-image", requireAuth, aiLimiter, enforceGenerationLimit, 
     // 3. Сохранение файла на диск в uploadsDir
     const fileId = `${req.workspaceUser.id}_gen_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.jpg`;
     const newPath = path.join(uploadsDir, fileId);
-    
+
     fs.writeFileSync(newPath, buffer);
     debugLog("POST /api/generate-image: generated image saved.");
 

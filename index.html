@@ -1168,6 +1168,8 @@
         ["board", "Канбан", icons.board],
         ["media", "Медиа", icons.media],
         ["queue", "Очередь", icons.queue],
+        ["projects", "Проекты", icons.projects],
+        ["logs", "Логи", icons.logs],
         ["settings", "Настройки", icons.settings],
         ["logout", "Выход", icons.logout]
       ];
@@ -1378,10 +1380,10 @@
           merged.briefMode = parsed.briefMode || defaultState.briefMode;
           if (merged.planner.publishDate === undefined || merged.planner.publishDate === null) merged.planner.publishDate = todayInputValue();
           if (merged.planner.publishTime === undefined || merged.planner.publishTime === null) merged.planner.publishTime = nextHourInputValue();
-          
+
           merged.settings.openaiApiKey = "";
           merged.settings.telegramBotToken = "";
-          
+
           merged.ideas = parsed.ideas || [];
           merged.queue = parsed.queue || [];
           merged.media = parsed.media || [];
@@ -1636,7 +1638,7 @@
         const uploadPreview = document.getElementById("uploadPreview");
         const previewMediaContainer = document.getElementById("previewMediaContainer");
         const previewFileName = document.getElementById("previewFileName");
-        
+
         if (!fileInput || !uploadZone) return;
 
         uploadZone.addEventListener("dragover", (e) => {
@@ -1721,7 +1723,7 @@
 
       function renderNav() {
         const projectOptions = state.projects.map(p => `<option value="${p.id}" ${p.id === state.activeProjectId ? 'selected' : ''}>📁 ${escapeHtml(p.name)}</option>`).join("");
-        
+
         el.nav.innerHTML = `
           <div style="padding: 0 12px 16px 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
             <span style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700;">Активный проект</span>
@@ -1743,7 +1745,7 @@
 
       function renderAccount() {
         const keyReady = Boolean(state.settings.openaiReady || state.settings.openaiApiKey);
-        
+
         let limitHtml = "";
         if (state.limitInfo && !state.limitInfo.isUnlimited) {
           limitHtml = `
@@ -1873,8 +1875,8 @@
       // --- MARKETING BASE & VAULT: renderDatabase ---
       function getProjectCompletionPercentage(project) {
         const fields = [
-          "name", "niche", "offer", "price", "timelines", "warranty", "geo", "landingPage", 
-          "audience", "pain", "fear", "reason", "proof", "facts", "goal", "nextStep", 
+          "name", "niche", "offer", "price", "timelines", "warranty", "geo", "landingPage",
+          "audience", "pain", "fear", "reason", "proof", "facts", "goal", "nextStep",
           "leadMagnet", "tone", "stopWords"
         ];
         let filledCount = 0;
@@ -1886,7 +1888,7 @@
 
       function renderDatabase() {
         const project = activeProject();
-        
+
         return `
           <div class="panel">
             <div class="row">
@@ -1965,10 +1967,6 @@
                 <label class="field">
                   <span class="label">Гео / Регион</span>
                   <input class="input" data-action="project-input" name="geo" placeholder="Например: Москва и Московская область (до 30 км от МКАД)" value="${escapeHtml(project.geo || "")}" />
-                </label>
-                <label class="field">
-                  <span class="label">Посадочная страница / Сайт</span>
-                  <input class="input" data-action="project-input" name="landingPage" placeholder="Например: https://potolki-spb.ru/quiz" value="${escapeHtml(project.landingPage || "")}" />
                 </label>
               </div>
             </details>
@@ -2090,26 +2088,26 @@
         if (!text) return [];
         const scenes = [];
         const blocks = text.split(/(?=Кадр \d|Сцена \d|\b\d\b\.?\s*(?:Кадр|Сцена))/i);
-        
+
         blocks.forEach((block) => {
           const trimmed = block.trim();
           if (!trimmed) return;
-          
+
           const titleMatch = trimmed.match(/^(?:Кадр|Сцена)?\s*\d+[:\.]?\s*/i);
           const title = titleMatch ? titleMatch[0].replace(/[:\.]\s*$/, "") : "";
-          
+
           const timeMatch = trimmed.match(/(?:\d+[-–]\d+\s*(?:сек|с)|секунд[ыа]?\s*\d+[-–]\d+|\b\d+\s*сек\b)/i);
           const time = timeMatch ? timeMatch[0] : "";
-          
+
           const visualMatch = trimmed.match(/(?:Визуал|В кадре|Кадр|Что в кадре)[:\-]?\s*([^\n]+)/i);
           const visual = visualMatch ? visualMatch[1].trim() : "";
-          
+
           const voiceMatch = trimmed.match(/(?:Голос|Речь|Диктор|Текст)[:\-]?\s*([^\n]+)/i);
           const voice = voiceMatch ? voiceMatch[1].trim() : trimmed.substring(0, 100);
-          
+
           const screenMatch = trimmed.match(/(?:Текст на экране|Субтитры|Надпись)[:\-]?\s*([^\n]+)/i);
           const screenText = screenMatch ? screenMatch[1].trim() : "";
-          
+
           scenes.push({
             title: title || `Кадр ${scenes.length + 1}`,
             time: time || (scenes.length === 0 ? "0-3 сек" : scenes.length === 1 ? "3-12 сек" : scenes.length === 2 ? "12-20 сек" : "20-25 сек"),
@@ -2118,14 +2116,14 @@
             screenText: screenText || ""
           });
         });
-        
+
         return scenes;
       }
 
       function renderReelsVisualizer(text) {
         const scenes = parseReelsScript(text);
         if (!scenes.length) return "";
-        
+
         return `
           <div class="panel" style="margin-top: 24px; border: 1px solid var(--border); background: rgba(255,255,255,0.01);">
             <h3 class="title-sm" style="color: var(--accent); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
@@ -2161,17 +2159,17 @@
 
       function parseRsyScript(text) {
         if (!text) return { headlines: [], texts: [], concepts: [], ctas: [] };
-        
+
         const headlines = [];
         const texts = [];
         const concepts = [];
         const ctas = [];
-        
+
         const lines = text.split("\n");
         lines.forEach((line) => {
           const trimmed = line.trim();
           if (!trimmed) return;
-          
+
           if (/Заголовок\s*\d*[:\-]/i.test(trimmed) || /^\d+\.\s*(?:Заголовок|Заголовок\s+\d+)/i.test(trimmed)) {
             headlines.push(trimmed.replace(/^(?:Заголовок\s*\d*[:\-]|^\d+\.\s*(?:Заголовок|Заголовок\s+\d+)[:\-]?)\s*/i, ""));
           } else if (/Текст\s*\d*[:\-]/i.test(trimmed) || /^\d+\.\s*(?:Текст|Текст объявления)/i.test(trimmed)) {
@@ -2182,13 +2180,13 @@
             ctas.push(trimmed.replace(/^(?:CTA\s*\d*[:\-]|Призыв\s*\d*[:\-]|Призыв к действию\s*\d*[:\-]?)\s*/i, ""));
           }
         });
-        
+
         return { headlines, texts, concepts, ctas };
       }
 
       function renderRsyVisualizer(text) {
         const data = parseRsyScript(text);
-        
+
         if (!data.headlines.length && !data.texts.length) {
           const cards = text.split(/\n\s*\n/).filter(b => b.trim().length > 10);
           if (!cards.length) return "";
@@ -2206,7 +2204,7 @@
             </div>
           `;
         }
-        
+
         return `
           <div class="panel" style="margin-top: 24px; border: 1px solid var(--border); background: rgba(255,255,255,0.01);">
             <h3 class="title-sm" style="color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
@@ -2219,7 +2217,7 @@
                 <div class="stack" style="gap: 8px;">
                   ${data.headlines.map((h, i) => `
                     <div style="padding: 8px 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius); display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                      <span style="font-size: 12px; font-weight: 500;">${i+1}. ${escapeHtml(h)}</span>
+                      <span style="font-size: 12px; font-weight: 500;">${i + 1}. ${escapeHtml(h)}</span>
                       <button class="btn small icon-only" data-action="copy-text-custom" data-text="${escapeHtml(h)}" title="Скопировать" style="min-height: 24px; padding: 4px 6px;">${icons.copy}</button>
                     </div>
                   `).join("")}
@@ -2231,7 +2229,7 @@
                 <div class="stack" style="gap: 8px;">
                   ${data.texts.map((t, i) => `
                     <div style="padding: 8px 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius); display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                      <span style="font-size: 12px; color: var(--text-muted);">${i+1}. ${escapeHtml(t)}</span>
+                      <span style="font-size: 12px; color: var(--text-muted);">${i + 1}. ${escapeHtml(t)}</span>
                       <button class="btn small icon-only" data-action="copy-text-custom" data-text="${escapeHtml(t)}" title="Скопировать" style="min-height: 24px; padding: 4px 6px;">${icons.copy}</button>
                     </div>
                   `).join("")}
@@ -2262,20 +2260,20 @@
 
       function parseFaqScript(text) {
         if (!text) return [];
-        
+
         const qaList = [];
         const blocks = text.split(/(?=Вопрос \d|Q\b\d\b|Вопрос:|Q:)/i);
-        
+
         blocks.forEach((block) => {
           const trimmed = block.trim();
           if (!trimmed) return;
-          
+
           const qMatch = trimmed.match(/(?:Вопрос|Q)[:\-]?\s*([^\n]+)/i);
           const question = qMatch ? qMatch[1].trim() : trimmed.split("\n")[0];
-          
+
           const aMatch = trimmed.match(/(?:Ответ|A)[:\-]?\s*([\s\S]+)/i);
           const answer = aMatch ? aMatch[1].trim() : trimmed.split("\n").slice(1).join("\n").trim();
-          
+
           if (question && answer) {
             qaList.push({
               question: question.replace(/^[QВопрос\s\d:\-\.]+/i, ""),
@@ -2283,14 +2281,14 @@
             });
           }
         });
-        
+
         return qaList;
       }
 
       function renderFaqVisualizer(text) {
         const qaList = parseFaqScript(text);
         if (!qaList.length) return "";
-        
+
         return `
           <div class="panel" style="margin-top: 24px; border: 1px solid var(--border); background: rgba(255,255,255,0.01);">
             <h3 class="title-sm" style="color: var(--accent); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
@@ -2319,9 +2317,9 @@
       function parseAlternativeHooks(text) {
         if (!text) return [];
         const hooks = [];
-        
+
         const match = text.match(/(?:Варианты хуков|Альтернативные хуки|3 варианта первого абзаца|3 варианта хука)[:\-]?\s*([\s\S]+?)(?=\n\n[А-ЯA-Z]|\n\n$|$)/i);
-        
+
         if (match) {
           const lines = match[1].split("\n");
           lines.forEach((line) => {
@@ -2331,14 +2329,14 @@
             }
           });
         }
-        
+
         return hooks;
       }
 
       function renderAlternativeHooksVisualizer(text) {
         const hooks = parseAlternativeHooks(text);
         if (!hooks.length) return "";
-        
+
         return `
           <div class="panel" style="margin-top: 16px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.01);">
             <h4 class="title-sm" style="font-size: 13px; color: var(--accent); margin-bottom: 8px;">🔥 Альтернативные хуки (кликни для замены первого абзаца):</h4>
@@ -2353,21 +2351,21 @@
         `;
       }
 
-      window.swapFirstParagraph = function(newParagraph) {
+      window.swapFirstParagraph = function (newParagraph) {
         const textarea = document.querySelector('[data-action="edit-content"][data-field="body"]');
         if (!textarea) return;
-        
+
         const originalText = textarea.value;
         const paragraphs = originalText.split(/\n\s*\n/);
-        
+
         if (paragraphs.length > 0) {
           paragraphs[0] = newParagraph;
           const newText = paragraphs.join("\n\n");
           textarea.value = newText;
-          
+
           const event = new Event('input', { bubbles: true });
           textarea.dispatchEvent(event);
-          
+
           showToast("Хук успешно заменен!");
         }
       };
@@ -2375,19 +2373,19 @@
       async function refineText(action) {
         const textarea = document.querySelector('[data-action="edit-content"][data-field="body"]');
         if (!textarea) return;
-        
+
         const originalText = textarea.value;
         const start = textarea.selectionStart;
         const end = textarea.selectionEnd;
-        
+
         const isSelection = start !== end;
         const textToRefine = isSelection ? originalText.substring(start, end) : originalText;
-        
+
         if (!textToRefine.trim()) {
           showToast("Сначала выдели или напиши текст для улучшения");
           return;
         }
-        
+
         setBusy(true);
         showToast("ИИ улучшает текст...");
         try {
@@ -2399,7 +2397,7 @@
               project: activeProject()
             }
           });
-          
+
           if (data.ok && data.refinedText) {
             let newText;
             if (isSelection) {
@@ -2407,12 +2405,12 @@
             } else {
               newText = data.refinedText;
             }
-            
+
             textarea.value = newText;
-            
+
             const event = new Event('input', { bubbles: true });
             textarea.dispatchEvent(event);
-            
+
             showToast("Текст успешно улучшен!");
           } else {
             showToast("Не удалось улучшить текст");
@@ -2475,7 +2473,7 @@
 
         let visualizerHtml = "";
         const bodyText = content.body || "";
-        
+
         if (state.activeTemplateId === "reels-script" || state.activeTemplateId === "shorts-script") {
           visualizerHtml = renderReelsVisualizer(bodyText);
         } else if (state.activeTemplateId === "rsy-banner") {
@@ -2605,6 +2603,7 @@
                   </div>
                   <div class="actions" style="margin-top: 24px;">
                     <button class="btn primary" data-action="add-to-queue">Поставить в очередь</button>
+                    <button class="btn" data-action="generate-image">${icons.spark} Сгенерировать картинку</button>
                     <button class="btn" data-action="copy-current">${icons.copy} Копировать текст</button>
                   </div>
                 </div>
@@ -2767,6 +2766,8 @@
 
       function renderSettings() {
         const s = state.settings;
+        const ytConnected = Boolean(s.youtubeConnected);
+        const ytEnabled = Boolean(s.youtubeOAuthEnabled);
         return `
           <div class="panel">
             <h1 class="title-xl">Настройки</h1>
@@ -2789,6 +2790,25 @@
                 <label class="field"><span class="label">Bot Token</span><input class="input" type="password" data-action="setting-input" name="telegramBotToken" value="${escapeHtml(s.telegramBotToken)}" /></label>
                 <label class="field"><span class="label">Chat ID</span><input class="input" data-action="setting-input" name="telegramChatId" value="${escapeHtml(s.telegramChatId)}" /></label>
                 <button class="btn primary" data-action="save-server-config">Сохранить</button>
+              </div>
+            </div>
+            <div class="panel">
+              <h2 class="title">Instagram</h2>
+              <div class="form" style="margin-top: 16px;">
+                <label class="field"><span class="label">Access Token</span><input class="input" type="password" data-action="setting-input" name="instagramAccessToken" value="${escapeHtml(s.instagramAccessToken)}" /></label>
+                <label class="field"><span class="label">Instagram User ID</span><input class="input" data-action="setting-input" name="instagramUserId" value="${escapeHtml(s.instagramUserId)}" /></label>
+                <button class="btn primary" data-action="save-server-config">Сохранить</button>
+              </div>
+            </div>
+            <div class="panel">
+              <h2 class="title">YouTube</h2>
+              <div class="form" style="margin-top: 16px;">
+                ${ytConnected
+            ? `<div class="metric" style="padding: 12px;"><div class="metric-label">Канал</div><div class="metric-value" style="font-size: 14px;">${escapeHtml(s.youtubeChannelId || 'подключён')}</div></div>
+                     <button class="btn danger" data-action="youtube-disconnect">Отключить YouTube</button>`
+            : (ytEnabled
+              ? `<button class="btn primary" data-action="youtube-connect">Подключить YouTube</button>`
+              : `<div class="notice" style="margin: 0;">YouTube OAuth не настроен на сервере. Добавь <code>YOUTUBE_CLIENT_ID</code> и <code>YOUTUBE_CLIENT_SECRET</code> в <code>.env</code>.</div>`)}
               </div>
             </div>
           </div>
@@ -3025,7 +3045,8 @@
       async function addToQueue() {
         const c = selectedContent(); if (!c.body) return;
         const p = ensurePlanner();
-        state.queue.unshift({ id: uid("q"), projectId: state.activeProjectId, platform: state.activePlatform, title: c.headline, body: c.body, tags: c.tags, mediaId: state.selectedMediaId || "", status: "scheduled", state: "Запланировано", publishDate: p.publishDate, publishTime: p.publishTime, scheduledAt: `${p.publishDate}T${p.publishTime}` });
+        const media = state.media.find((m) => m.id === state.selectedMediaId);
+        state.queue.unshift({ id: uid("q"), projectId: state.activeProjectId, platform: state.activePlatform, title: c.headline, body: c.body, tags: c.tags, mediaId: state.selectedMediaId || "", mediaUrl: media?.url || "", mediaType: media?.type || "", status: "scheduled", state: "Запланировано", publishDate: p.publishDate, publishTime: p.publishTime, scheduledAt: `${p.publishDate}T${p.publishTime}` });
         state.activeTab = "queue"; render(); scrollToTop(); showToast("В очереди");
         pushWorkspace();
       }
@@ -3033,9 +3054,28 @@
         const post = state.queue.find(q => q.id === id); if (!post) return;
         post.state = "Публикуется"; render();
         try {
-          await request("/api/publish/" + post.platform, { method: "POST", body: { post } });
+          const media = state.media.find((m) => m.id === post.mediaId);
+          await request("/api/publish/" + post.platform, { method: "POST", body: { post, media: media ? { url: media.url, type: media.type } : null } });
           post.status = "published"; post.state = "Опубликовано"; showToast("Опубликовано");
         } catch (e) { post.status = "error"; post.state = "Ошибка"; showToast("Ошибка публикации"); } finally { render(); }
+      }
+
+      async function generateImage() {
+        const content = selectedContent();
+        const promptText = String(content.body || content.headline || "").trim();
+        if (!promptText) { showToast("Нет текста для генерации картинки"); return; }
+        setBusy(true); showToast("Генерируем изображение...");
+        try {
+          const data = await request("/api/generate-image", { method: "POST", body: { prompt: promptText } });
+          state.media.unshift({ id: data.id, name: data.name, type: data.type, size: data.size, url: data.url });
+          state.selectedMediaId = data.id;
+          if (data.limitInfo) state.limitInfo = data.limitInfo;
+          showToast("Изображение готово");
+        } catch (e) {
+          showToast(cleanError(e.message));
+        } finally {
+          setBusy(false); render();
+        }
       }
 
       /* Modals */
@@ -3194,6 +3234,7 @@
             state.projects = [{ id: "p_1", name: "Новый", briefText: "", niche: "", offer: "", audience: "", pain: "", proof: "", common: "", tone: "", details: "", price: "", timelines: "", warranty: "", geo: "", landingPage: "", awareness: "Теплый", fear: "", reason: "", facts: "", goal: "", nextStep: "", leadMagnet: "", stopWords: "", competitors: "", advantages: "" }]; state.activeProjectId = "p_1";
             saveState();
             render();
+            pushWorkspace();
             showToast("Рабочая область полностью очищена");
           }
           return;
@@ -3232,6 +3273,19 @@
         }
         if (a === "kanban-editor-to-queue") {
           addToQueue();
+          return;
+        }
+        if (a === "generate-image") { generateImage(); return; }
+        if (a === "youtube-connect") {
+          window.location.href = "/api/auth/youtube";
+          return;
+        }
+        if (a === "youtube-disconnect") {
+          if (confirm("Отключить подключённый YouTube-аккаунт?")) {
+            request("/api/auth/youtube/disconnect", { method: "POST" })
+              .then(() => { state.settings.youtubeConnected = false; state.settings.youtubeChannelId = ""; render(); showToast("YouTube отключён"); })
+              .catch((e) => showToast(cleanError(e.message)));
+          }
           return;
         }
       });
