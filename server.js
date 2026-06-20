@@ -104,14 +104,20 @@ process.on("uncaughtException", (err) => {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function safeNumber(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const num = Number(value);
+  return isNaN(num) ? fallback : num;
+}
+
 const app = express();
-const PORT = Number(process.env.PORT || 8080);
+const PORT = safeNumber(process.env.PORT, 8080);
 
 const DEFAULT_AI_MODEL = process.env.DEFAULT_MODEL || process.env.DEFAULT_AI_MODEL || "timeweb-agent";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
-const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 200);
-const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 300000);
-const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 8000);
+const MAX_UPLOAD_MB = safeNumber(process.env.MAX_UPLOAD_MB, 200);
+const AI_TIMEOUT_MS = safeNumber(process.env.AI_TIMEOUT_MS, 300000);
+const AI_MAX_TOKENS = safeNumber(process.env.AI_MAX_TOKENS, 8000);
 const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN !== "false";
 const DEMO_EMAIL = process.env.DEMO_EMAIL || "kubik";
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "kubik";
@@ -120,15 +126,15 @@ const CLIENT_DEMO_PASSWORD = process.env.CLIENT_DEMO_PASSWORD || "client123";
 const TEST_DEMO_EMAIL = process.env.TEST_DEMO_EMAIL || "test2";
 const TEST_DEMO_PASSWORD = process.env.TEST_DEMO_PASSWORD || "test123";
 const CLIENT_SHARED_WORKSPACE = process.env.CLIENT_SHARED_WORKSPACE !== "false";
-const CLIENT_DAILY_GENERATION_LIMIT = Number(process.env.CLIENT_DAILY_GENERATION_LIMIT || 5);
+const CLIENT_DAILY_GENERATION_LIMIT = safeNumber(process.env.CLIENT_DAILY_GENERATION_LIMIT, 5);
 const DEBUG_HEALTH = process.env.DEBUG_HEALTH === "true";
 const DEBUG_LOGS = process.env.DEBUG_LOGS === "true";
-const AUTH_RATE_LIMIT_WINDOW_MS = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
-const AUTH_RATE_LIMIT_MAX = Number(process.env.AUTH_RATE_LIMIT_MAX || 20);
-const AI_RATE_LIMIT_WINDOW_MS = Number(process.env.AI_RATE_LIMIT_WINDOW_MS || 60 * 60 * 1000);
-const AI_RATE_LIMIT_MAX = Number(process.env.AI_RATE_LIMIT_MAX || 60);
-const PUBLISH_RATE_LIMIT_WINDOW_MS = Number(process.env.PUBLISH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
-const PUBLISH_RATE_LIMIT_MAX = Number(process.env.PUBLISH_RATE_LIMIT_MAX || 60);
+const AUTH_RATE_LIMIT_WINDOW_MS = safeNumber(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
+const AUTH_RATE_LIMIT_MAX = safeNumber(process.env.AUTH_RATE_LIMIT_MAX, 20);
+const AI_RATE_LIMIT_WINDOW_MS = safeNumber(process.env.AI_RATE_LIMIT_WINDOW_MS, 60 * 60 * 1000);
+const AI_RATE_LIMIT_MAX = safeNumber(process.env.AI_RATE_LIMIT_MAX, 60);
+const PUBLISH_RATE_LIMIT_WINDOW_MS = safeNumber(process.env.PUBLISH_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
+const PUBLISH_RATE_LIMIT_MAX = safeNumber(process.env.PUBLISH_RATE_LIMIT_MAX, 60);
 
 // YouTube OAuth2 config (Google Cloud Console)
 const YOUTUBE_CLIENT_ID = process.env.YOUTUBE_CLIENT_ID || "";
@@ -1334,7 +1340,11 @@ function getHealthPayload() {
 }
 
 app.get(["/api/health", "/health", "/healthz"], (req, res) => {
-  res.json(getHealthPayload());
+  if (req.query.json === "true" || (req.headers.accept && req.headers.accept.includes("application/json"))) {
+    res.json(getHealthPayload());
+  } else {
+    res.status(200).send("ok");
+  }
 });
 
 app.post("/api/auth/register", authLimiter, async (req, res) => {
