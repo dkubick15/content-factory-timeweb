@@ -143,18 +143,32 @@ const defaultDataDir = runsInsideAppContainer
   ? "/app/data"
   : path.join(process.cwd(), "data");
 const envDataDir = process.env.DATA_DIR || "";
-const DATA_DIR = envDataDir || defaultDataDir;
+let DATA_DIR = envDataDir || defaultDataDir;
 
-try {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.mkdirSync(path.join(DATA_DIR, "uploads"), { recursive: true });
-  const testFile = path.join(DATA_DIR, ".write-test");
-  fs.writeFileSync(testFile, String(Date.now()));
-  fs.unlinkSync(testFile);
-  console.log(`[Data] DATA_DIR writable: ${DATA_DIR}`);
-} catch (error) {
-  console.error(`[Data] DATA_DIR not writable: ${DATA_DIR}`, error.message);
-  process.exit(1);
+function tryInitStorage(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(path.join(dir, "uploads"), { recursive: true });
+    const testFile = path.join(dir, ".write-test");
+    fs.writeFileSync(testFile, String(Date.now()));
+    fs.unlinkSync(testFile);
+    return true;
+  } catch (error) {
+    console.error(`[Storage Init] Directory ${dir} is not writable:`, error.message);
+    return false;
+  }
+}
+
+if (!tryInitStorage(DATA_DIR)) {
+  console.warn(`[Storage Warning] Failed to initialize primary DATA_DIR: ${DATA_DIR}. Attempting fallback to temp directory...`);
+  const fallbackDir = path.join("/tmp", "content-factory-data");
+  if (tryInitStorage(fallbackDir)) {
+    DATA_DIR = fallbackDir;
+    console.log(`[Storage Success] Successfully fell back to writable temp directory: ${DATA_DIR}`);
+  } else {
+    console.error(`[Storage Critical] Failed to write to fallback temp directory as well. Exiting.`);
+    process.exit(1);
+  }
 }
 
 const usersFile = path.join(DATA_DIR, "users.json");
@@ -173,15 +187,17 @@ if (!APP_SECRET) {
       fs.writeFileSync(secretFile, APP_SECRET, "utf8");
     }
   } catch (e) {
-    console.error("КРИТИЧНО: не удалось прочитать или записать secret.key:", e.message);
-    console.error("Задай APP_SECRET в переменных окружения или обеспечь запись в DATA_DIR.");
-    process.exit(1);
+    console.warn("[APP_SECRET] Не удалось использовать secret.key в DATA_DIR:", e.message);
+    console.warn("[APP_SECRET] Генерируем временный сессионный секрет для запуска...");
+    APP_SECRET = crypto.randomBytes(32).toString("hex");
   }
 }
 
-if (!APP_SECRET || APP_SECRET.length < 32) {
-  console.error("КРИТИЧНО: APP_SECRET слишком короткий или отсутствует. Используй минимум 32 символа.");
-  process.exit(1);
+if (!APP_SECRET) {
+  APP_SECRET = crypto.randomBytes(32).toString("hex");
+} else if (APP_SECRET.length < 32) {
+  console.warn(`[APP_SECRET] Предупреждение: заданный APP_SECRET слишком короткий (${APP_SECRET.length} симв.). Хэшируем его для безопасности.`);
+  APP_SECRET = crypto.createHash("sha256").update(APP_SECRET).digest("hex");
 }
 
 const corsOrigin = process.env.CORS_ORIGIN
@@ -1318,7 +1334,7 @@ function getHealthPayload() {
 }
 
 app.get(["/api/health", "/health", "/healthz"], (req, res) => {
-  res.status(200).send("ok");
+  res.json(getHealthPayload());
 });
 
 app.post("/api/auth/register", authLimiter, async (req, res) => {

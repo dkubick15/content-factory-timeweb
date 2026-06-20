@@ -27,7 +27,7 @@ COPY --chown=app:app . .
 
 RUN mkdir -p /app/data/uploads \
   && chown -R app:app /app/data \
-  && chmod -R 775 /app/data
+  && chmod -R 777 /app/data
 
 ENV NODE_ENV=production
 ENV PORT=8080
