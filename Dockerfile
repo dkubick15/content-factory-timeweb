@@ -3,7 +3,7 @@ FROM node:20-slim
 RUN corepack enable
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \
-  && apt-get install -y --no-install-recommends curl \
+  && apt-get install -y --no-install-recommends curl wget \
   && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pm2
@@ -16,12 +16,12 @@ WORKDIR /app
 COPY package.json package-lock.json* pnpm-lock.yaml* pnpm-workspace.yaml* ./
 
 RUN if [ -f pnpm-lock.yaml ]; then \
-      corepack prepare pnpm --activate && pnpm install --frozen-lockfile; \
-    elif [ -f package-lock.json ]; then \
-      npm ci; \
-    else \
-      npm install; \
-    fi
+  corepack prepare pnpm --activate && pnpm install --frozen-lockfile; \
+  elif [ -f package-lock.json ]; then \
+  npm ci; \
+  else \
+  npm install; \
+  fi
 
 COPY --chown=app:app . .
 
@@ -34,6 +34,9 @@ ENV PORT=8080
 ENV DATA_DIR=/app/data
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:8080/api/health || exit 1
 
 # USER app
 

@@ -1340,11 +1340,11 @@ function getHealthPayload() {
 }
 
 app.get(["/api/health", "/health", "/healthz"], (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   if (req.query.json === "true" || (req.headers.accept && req.headers.accept.includes("application/json"))) {
-    res.json(getHealthPayload());
-  } else {
-    res.status(200).send("ok");
+    return res.json(getHealthPayload());
   }
+  res.type("text/plain").status(200).send("ok");
 });
 
 app.post("/api/auth/register", authLimiter, async (req, res) => {
