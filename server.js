@@ -35,6 +35,7 @@ process.env.DATA_DIR = process.env.DATA_DIR || '/app/data';
 
 const APP_BUILD = "2026-05-30-brief-import-v12";
 const FALLBACK_TIMEWEB_AGENT_ID = "40f010e8-9dd7-473c-812f-81b65aba981f";
+const FALLBACK_TIMEWEB_API_KEY = "eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjFrYnhacFJNQGJSI0tSbE1xS1lqIn0.eyJ1c2VyIjoia2UwNTQwODIiLCJ0eXBlIjoiYXBpX2tleSIsImFwaV9rZXlfaWQiOiI3ZjBjNzIwMy0wNGVkLTRlNjUtYWYwZi0xNDcwNjZmOGY4ZWYiLCJpYXQiOjE3ODE5Nzk1ODd9.WvCbdfNbVTytSk6d7PE_mOKDtb2HoEU8BDPkcH_YXNHUJjH8X2XS5q6qldl86BQKJ4vL7cFw6qBZvRf40xczfqiOKmGV9GsVsOOS50OOlzk3POVQQ1LMda7fmjyqfJoCQ7-jMMeisiQZ1yQqEb0smlOKMoe452nRKhlcYSkInzrFU--8TJMl9s5wEWzxqI_d3FJPnY8iWrXurtByTYFgH_Lm63-YnfVKuMbiEFtV4RiFPJLwz21lkh3l0NU23sjAQce4cldk7E0durH4nKY9ZAp7x0_MRGbwCsv-Ni7OGHBpmL7FO_ZO-hZbfO9bNpkXZBFif9EIzz9Odn97z4GP3NIJDzDQCFfLMAKIx-1C80d9jNnYdaabzjI3klgVKgAaT-YR_e8drBfrZnD9dzgTRtdQIqK5yJ728_mk-Uv_VTKHCBktpW1YOpLZyv7buFsot6un0ZZmT1iljpb5pnU13NT9MoeRDNny3GuloFIToMcuezftrNJIhOAObeqIv9yj";
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -89,8 +90,8 @@ function resolveTimewebEnv() {
   }
 
   return {
-    apiKey: "",
-    apiKeySource: "",
+    apiKey: FALLBACK_TIMEWEB_API_KEY,
+    apiKeySource: "fallback_hardcoded",
     agentId: extractUuid(process.env.TIMEWEB_AGENT_ID) || FALLBACK_TIMEWEB_AGENT_ID,
     agentIdSource: process.env.TIMEWEB_AGENT_ID ? "TIMEWEB_AGENT_ID" : "fallback"
   };
