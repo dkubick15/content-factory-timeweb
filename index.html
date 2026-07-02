@@ -322,6 +322,21 @@
       border-color: var(--border-focus);
     }
 
+    /* Видимый фокус с клавиатуры для всех интерактивных элементов */
+    .btn:focus-visible,
+    .nav-btn:focus-visible,
+    .platform:focus-visible,
+    .placement-btn:focus-visible,
+    .idea:focus-visible,
+    .project-card:focus-visible,
+    .template-card:focus-visible,
+    .kanban-card:focus-visible,
+    a:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
     .textarea {
       min-height: 120px;
       resize: vertical;
@@ -1506,7 +1521,8 @@
         if (!options.public) headers.Authorization = "Bearer " + token();
 
         const controller = new AbortController();
-        const timeoutMs = options.timeoutMs || (path === "/api/generate" ? 300000 : 30000);
+        const AI_PATHS = ["/api/generate-image", "/api/refine", "/api/project/import-url", "/api/project/import-brief", "/api/project/brief-template"];
+        const timeoutMs = options.timeoutMs || (path === "/api/generate" ? 600000 : AI_PATHS.includes(path) ? 300000 : 30000);
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
         let response;
@@ -2260,27 +2276,40 @@
 
       function parseFaqScript(text) {
         if (!text) return [];
-
         const qaList = [];
-        const blocks = text.split(/(?=Вопрос \d|Q\b\d\b|Вопрос:|Q:)/i);
 
-        blocks.forEach((block) => {
-          const trimmed = block.trim();
-          if (!trimmed) return;
-
-          const qMatch = trimmed.match(/(?:Вопрос|Q)[:\-]?\s*([^\n]+)/i);
-          const question = qMatch ? qMatch[1].trim() : trimmed.split("\n")[0];
-
-          const aMatch = trimmed.match(/(?:Ответ|A)[:\-]?\s*([\s\S]+)/i);
-          const answer = aMatch ? aMatch[1].trim() : trimmed.split("\n").slice(1).join("\n").trim();
-
-          if (question && answer) {
-            qaList.push({
-              question: question.replace(/^[QВопрос\s\d:\-\.]+/i, ""),
-              answer: answer.replace(/^[AОтвет\s\d:\-\.]+/i, "")
-            });
+        // 1) Явные метки: «Вопрос N: … / Ответ: …» (или Q:/A:). Бывает, когда ИИ
+        //    следует схеме; «критик» часто переформатирует, поэтому это лишь один из режимов.
+        if (/(^|\n)\s*(Вопрос|Question|Q)\s*\d*[:\-]/i.test(text)) {
+          const blocks = text.split(/(?=(?:Вопрос|Question|Q)\s*\d*[:\-])/i);
+          for (const block of blocks) {
+            const trimmed = block.trim();
+            if (!trimmed) continue;
+            const qMatch = trimmed.match(/(?:Вопрос|Question|Q)[:\-]?\s*([^\n]+)/i);
+            const aMatch = trimmed.match(/(?:Ответ|Answer|A)[:\-]?\s*([\s\S]+)/i);
+            const question = qMatch ? qMatch[1].trim() : "";
+            const answer = aMatch ? aMatch[1].trim() : trimmed.split("\n").slice(1).join("\n").trim();
+            if (question && answer) {
+              qaList.push({
+                question: question.replace(/^[\d\.\)\-\*\s]+/, "").trim(),
+                answer: answer.replace(/^[\d\.\)\-\*\s]+/, "").trim()
+              });
+            }
           }
-        });
+          if (qaList.length) return qaList;
+        }
+
+        // 2) Нумерованный список: «1. Вопрос?\nОтвет абзацем» (реальный частый формат ИИ).
+        //    Блоки разделены пустой строкой; без номера (вводная/финальная фраза) пропускаем.
+        for (const raw of text.split(/\n\s*\n/)) {
+          const block = raw.trim();
+          if (!block) continue;
+          if (!/^\s*\d+[\.\)\-:]/.test(block)) continue;
+          const lines = block.split("\n");
+          const question = lines[0].replace(/^\s*\d+[\.\)\-:]\s*/, "").trim();
+          const answer = lines.slice(1).join("\n").trim();
+          if (question && answer) qaList.push({ question, answer });
+        }
 
         return qaList;
       }
@@ -2342,7 +2371,7 @@
             <h4 class="title-sm" style="font-size: 13px; color: var(--accent); margin-bottom: 8px;">🔥 Альтернативные хуки (кликни для замены первого абзаца):</h4>
             <div class="stack" style="gap: 8px;">
               ${hooks.map(h => `
-                <div class="project-card" style="padding: 10px; cursor: pointer; border-color: var(--border); font-size: 12px; line-height: 1.4;" onclick="swapFirstParagraph('${escapeHtml(h).replaceAll("'", "\\'")}')">
+                <div class="project-card" data-action="swap-hook" data-hook="${escapeHtml(h)}" style="padding: 10px; cursor: pointer; border-color: var(--border); font-size: 12px; line-height: 1.4;">
                   <strong>Вариант:</strong> ${escapeHtml(h)}
                 </div>
               `).join("")}
@@ -2473,8 +2502,11 @@
 
         let visualizerHtml = "";
         const bodyText = content.body || "";
+        // Раскадровку показываем не только по шаблону Reels/Shorts, но и когда тело реально
+        // является сценарием (платформа instagram/youtube задаёт формат даже при «телеграм»-шаблоне).
+        const looksLikeScript = /(^|\n)\s*(Кадр|Сцена|Scene)\s*\d/i.test(bodyText);
 
-        if (state.activeTemplateId === "reels-script" || state.activeTemplateId === "shorts-script") {
+        if (state.activeTemplateId === "reels-script" || state.activeTemplateId === "shorts-script" || looksLikeScript) {
           visualizerHtml = renderReelsVisualizer(bodyText);
         } else if (state.activeTemplateId === "rsy-banner") {
           visualizerHtml = renderRsyVisualizer(bodyText);
@@ -2539,7 +2571,7 @@
                   ${renderPlannerInput("publishTime", "Время", planner.publishTime, "", "time")}
                 </div>
                 
-                <button class="btn primary" data-action="generate" style="margin-top: 16px; width: 100%; font-weight: 700;" ${state.limitInfo && !state.limitInfo.isUnlimited && state.limitInfo.remaining < 1 ? 'disabled style="opacity: 0.5; cursor: not-allowed; background: var(--border);"' : ''}>
+                <button class="btn primary" data-action="generate" style="margin-top: 16px; width: 100%; font-weight: 700;${state.limitInfo && !state.limitInfo.isUnlimited && state.limitInfo.remaining < 1 ? ' opacity: 0.5; cursor: not-allowed; background: var(--border);' : ''}" ${state.limitInfo && !state.limitInfo.isUnlimited && state.limitInfo.remaining < 1 ? 'disabled' : ''}>
                   ${state.limitInfo && !state.limitInfo.isUnlimited && state.limitInfo.remaining < 1 ? "Недостаточно лимитов (обновится завтра)" : `${icons.spark} Запустить генерацию постов`}
                 </button>
                 <button class="btn" data-action="fill-brief-template" style="width: 100%; justify-content: center;">
@@ -2686,7 +2718,7 @@
 
             <!-- Ready -->
             <div class="kanban-column" id="kb-ready" ondragover="event.preventDefault();" ondragenter="kanbanDragEnter(this)" ondragleave="kanbanDragLeave(this)" ondrop="handleKanbanDrop(event, this, 'ready')">
-              <div class="kanban-column-header">В редакторе <span>${state.ideas.length ? 1 : 0}</span></div>
+              <div class="kanban-column-header">В редакторе <span>${selectedIdea() ? 1 : 0}</span></div>
               ${state.ideas.length ? `
                 <div class="kanban-card" data-action="tab" data-tab="factory" style="border-color: var(--accent);">
                   <div class="kanban-card-title">${escapeHtml(selectedIdea()?.title || state.ideas[0]?.title)}</div>
@@ -2841,7 +2873,7 @@
           <div class="idea ${item.id === state.selectedIdeaId ? "active" : ""}" data-action="select-idea" data-id="${item.id}">
             <div class="item-title">${escapeHtml(item.title)}</div>
             <div class="item-sub">${escapeHtml(item.angle)}</div>
-            <div class="item-foot"><span class="chip ok">${item.score}%</span></div>
+            <div class="item-foot"><span class="chip ok">${item.score != null && item.score !== "" ? item.score + "%" : "—"}</span></div>
           </div>
         `;
       }
@@ -2878,7 +2910,7 @@
             <div class="row" style="margin: 0;">
               <div>
                 <div class="item-title">${escapeHtml(item.title)}</div>
-                <div class="item-sub">${escapeHtml(item.publishDate)} ${escapeHtml(item.publishTime)} | ${escapeHtml(item.platform)}</div>
+                <div class="item-sub">${[item.publishDate, item.publishTime].filter(Boolean).map(escapeHtml).join(" ") || "Без даты"} | ${escapeHtml(item.platform)}</div>
               </div>
               <span class="chip ${item.status === 'published' ? 'ok' : item.status === 'error' ? 'bad' : 'info'}">${escapeHtml(item.state)}</span>
             </div>
@@ -3021,7 +3053,7 @@
       async function generate() {
         setBusy(true); showGenerationOverlay();
         try {
-          const data = await request("/api/generate", { method: "POST", body: { project: activeProject(), settings: state.settings, platform: state.activePlatform, planner: ensurePlanner() } });
+          const data = await request("/api/generate", { method: "POST", body: { project: activeProject(), settings: state.settings, platform: state.activePlatform, planner: ensurePlanner(), templateId: state.activeTemplateId } });
           state.ideas = (data.ideas || []).map(i => ({ id: uid("i"), ...i, status: "Готово" }));
           state.critic = data.critic || null;
           state.selectedIdeaId = state.ideas[0]?.id || ""; state.activeTab = "factory";
@@ -3152,6 +3184,7 @@
         if (a === "import-project-brief") { importProjectBrief(); return; }
         if (a === "import-project-url") { importProjectUrl(); return; }
         if (a === "select-idea") { state.selectedIdeaId = t.dataset.id; render(); return; }
+        if (a === "swap-hook") { swapFirstParagraph(t.dataset.hook || ""); return; }
         if (a === "select-platform") { state.activePlatform = t.dataset.platform; render(); return; }
         if (a === "add-to-queue") { addToQueue(); return; }
         if (a === "remove-queue") {

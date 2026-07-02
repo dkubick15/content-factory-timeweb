@@ -765,12 +765,13 @@ function requireAuth(req, res, next) {
 }
 
 function enforceGenerationLimit(req, res, next) {
-  // Лимит применяется только к тестовым демо-аккаунтам.
+  // Лимит применяется только к тестовым демо-аккаунтам. Только ПРОВЕРКА:
+  // само списание делаем в consumeGenerationLimit() после успешного результата,
+  // чтобы неудачные/отвалившиеся по таймауту попытки не съедали дневной лимит.
   if (req.user && isLimitedDemoEmail(req.user.email)) {
     const now = Date.now();
     const oneDayAgo = now - 24 * 60 * 60 * 1000;
 
-    // Ищем пользователя в store для мутации и сохранения
     const dbUser = req.store.users.find((u) => u.id === req.user.id);
     if (dbUser) {
       // Очищаем старые метки времени
@@ -781,13 +782,23 @@ function enforceGenerationLimit(req, res, next) {
           error: `Превышен суточный лимит генераций. Демо-аккаунт ограничен ${CLIENT_DAILY_GENERATION_LIMIT} генерациями в день.`
         });
       }
-
-      // Записываем метку
-      dbUser.generationTimestamps.push(now);
-      saveStore(req.store);
     }
   }
   next();
+}
+
+// Списываем одну генерацию с дневного лимита демо-аккаунта.
+// Вызывать строго перед успешным res.json в обработчиках /api/generate,
+// /api/refine и /api/generate-image.
+function consumeGenerationLimit(req) {
+  if (req.user && isLimitedDemoEmail(req.user.email)) {
+    const dbUser = req.store.users.find((u) => u.id === req.user.id);
+    if (dbUser) {
+      dbUser.generationTimestamps = dbUser.generationTimestamps || [];
+      dbUser.generationTimestamps.push(Date.now());
+      saveStore(req.store);
+    }
+  }
 }
 
 function getLimitInfo(req) {
@@ -1705,7 +1716,7 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
       });
     }
 
-    const { project, settings, platform, planner } = req.body || {};
+    const { project, settings, platform, planner, templateId } = req.body || {};
     if (!isPlainObject(project)) {
       return res.status(400).json({
         error: "Не передан project"
@@ -1778,6 +1789,16 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
         "- youtube.body: сценарий Shorts на 20-35 секунд: хук 0-3 сек, быстрый пример, вывод, призыв."
       ].join("\n");
       jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"telegram":{"format":"Пост","headline":"","body":"","tags":""},"instagram":{"format":"Сценарий","headline":"","body":"","tags":""},"youtube":{"format":"Сценарий","headline":"","body":"","tags":""}}}]}';
+    }
+
+    // Специфика шаблона: для РСЯ и FAQ заставляем ИИ выдать тело в формате,
+    // который понимают соответствующие визуализаторы на фронте. Без этого шаблоны
+    // rsy-banner/faq-objection (platform "telegram") получили бы обычный пост, и
+    // parseRsyScript/parseFaqScript не нашли бы ничего → визуализатор пустой.
+    if (templateId === "rsy-banner") {
+      platformRequirements = "- telegram.body: верни пакет объявлений для РСЯ строго строками внутри поля body, по такому шаблону на каждый вариант (3–5 вариантов):\nЗаголовок 1: ...\nТекст 1: ...\nКонцепция: ...\nCTA: ...\nПовтори блок для вариантов 2, 3 и т.д.";
+    } else if (templateId === "faq-objection") {
+      platformRequirements = "- telegram.body: верни FAQ для снятия возражений строго строками внутри поля body, по такому шаблону на каждую пару (4–6 пар):\nВопрос 1: ...\nОтвет: ...\nПовтори блок для вопросов 2, 3 и т.д.";
     }
 
     const systemPrompt = [
@@ -1959,6 +1980,7 @@ ${JSON.stringify({ ideas }, null, 2)}
       }
     }
 
+    consumeGenerationLimit(req);
     res.json({
       ok: true,
       provider: providerToUse,
@@ -2066,6 +2088,7 @@ ${instruction}
     const result = await callTimewebAgentApi(timewebApiKey, timewebAgentId, requestPayload);
     const refinedText = result.completion.choices?.[0]?.message?.content || "";
 
+    consumeGenerationLimit(req);
     res.json({ ok: true, refinedText: refinedText.trim() });
   } catch (err) {
     console.error("Ошибка в /api/refine:", err.message);
@@ -2227,6 +2250,7 @@ app.post("/api/generate-image", requireAuth, aiLimiter, enforceGenerationLimit, 
     const truncatedPrompt = prompt.slice(0, 30).trim() + (prompt.length > 30 ? "..." : "");
     const originalName = `ИИ_${truncatedPrompt}.jpg`;
 
+    consumeGenerationLimit(req);
     res.json({
       ok: true,
       id: fileId,
