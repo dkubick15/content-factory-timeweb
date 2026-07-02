@@ -978,29 +978,22 @@ function normalizeIdeas(data) {
     const pillar = String(item.pillar || item.category || item.rubric || "Контент").trim();
     const rawFormats = item.formats || {};
     const rawTelegram = rawFormats.telegram || item.telegram || {};
-    const rawInstagram = rawFormats.instagram || item.instagram || item.reels || {};
-    const rawYoutube = rawFormats.youtube || item.youtube || item.shorts || {};
+    const rawDzen = rawFormats.dzen || item.dzen || item.article || {};
     const body = String(item.body || item.text || item.description || item.explanation || "").trim();
     const tags = String(item.tags || "").trim();
 
     const formats = {
+      dzen: {
+        format: String(rawDzen.format || "SEO-статья").trim(),
+        headline: String(rawDzen.headline || rawDzen.title || title).trim(),
+        body: String(rawDzen.body || rawDzen.text || body || title).trim(),
+        tags: String(rawDzen.tags || tags || "").trim()
+      },
       telegram: {
-        format: String(rawTelegram.format || "Пост").trim(),
+        format: String(rawTelegram.format || "Инфо-пост").trim(),
         headline: String(rawTelegram.headline || rawTelegram.title || title).trim(),
         body: String(rawTelegram.body || rawTelegram.text || body || title).trim(),
         tags: String(rawTelegram.tags || tags || "").trim()
-      },
-      instagram: {
-        format: String(rawInstagram.format || "Reels, 30-45 секунд").trim(),
-        headline: String(rawInstagram.headline || rawInstagram.title || title).trim(),
-        body: String(rawInstagram.body || rawInstagram.text || body || `Сценарий: ${title}`).trim(),
-        tags: String(rawInstagram.tags || tags || "").trim()
-      },
-      youtube: {
-        format: String(rawYoutube.format || "Shorts, 30-45 секунд").trim(),
-        headline: String(rawYoutube.headline || rawYoutube.title || title).trim(),
-        body: String(rawYoutube.body || rawYoutube.text || body || `Сценарий: ${title}`).trim(),
-        tags: String(rawYoutube.tags || tags || "").trim()
       }
     };
 
@@ -1193,22 +1186,16 @@ function fallbackIdeasFromText(text, ideaCount, project = {}) {
       pillar: project.common || "Контент",
       status: "Собрано из ответа ИИ",
       formats: {
+        dzen: {
+          format: "SEO-статья",
+          headline: title,
+          body: `${title}\n\nПолезный разбор темы...\n\n- Важный факт 1\n- Важный факт 2\n\nКак мы это решаем: ${project.offer || 'наши услуги'}.\nОставьте заявку, чтобы получить консультацию!`,
+          tags: ""
+        },
         telegram: {
-          format: "Пост",
+          format: "Инфо-пост",
           headline: title,
           body,
-          tags: ""
-        },
-        instagram: {
-          format: "Reels, 30-45 секунд",
-          headline: title,
-          body: `Кадр 1: ${title}\nКадр 2: показать проблему.\nКадр 3: объяснить механизм.\nКадр 4: дать вывод и мягкий переход к заявке.`,
-          tags: ""
-        },
-        youtube: {
-          format: "Shorts, 30-45 секунд",
-          headline: title,
-          body: `Хук: ${title}\nДальше: короткий разбор причины, пример и вывод.\nФинал: предложить проверить свою связку или получить расчёт.`,
           tags: ""
         }
       }
@@ -1219,7 +1206,7 @@ function fallbackIdeasFromText(text, ideaCount, project = {}) {
 function defaultWorkspace() {
   return {
     activeProjectId: "p_1",
-    activePlatform: "telegram",
+    activePlatform: "dzen",
     selectedIdeaId: "",
     selectedMediaId: "",
     planner: {
@@ -1247,7 +1234,7 @@ function sanitizeWorkspace(input = {}) {
   const base = defaultWorkspace();
   const workspace = {
     activeProjectId: String(input.activeProjectId || base.activeProjectId),
-    activePlatform: ["telegram", "instagram", "youtube"].includes(input.activePlatform)
+    activePlatform: ["dzen", "telegram"].includes(input.activePlatform)
       ? input.activePlatform
       : base.activePlatform,
     selectedIdeaId: String(input.selectedIdeaId || ""),
@@ -1270,7 +1257,7 @@ function sanitizeWorkspace(input = {}) {
     return {
       ...post,
       id: String(post.id || crypto.randomUUID()),
-      platform: ["telegram", "instagram", "youtube"].includes(post.platform) ? post.platform : "telegram",
+      platform: ["dzen", "telegram"].includes(post.platform) ? post.platform : "dzen",
       status: post.status || (post.state === "Опубликовано" ? "published" : "scheduled"),
       state: post.state || statusLabel(post.status || "scheduled"),
       publishDate,
@@ -1765,30 +1752,25 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
     };
 
     const platformLabel = {
-      telegram: "Telegram-канал",
-      instagram: "Instagram Reels",
-      youtube: "YouTube Shorts"
+      dzen: "Яндекс Дзен (SEO-статьи)",
+      telegram: "Telegram-канал"
     }[platform] || "все площадки";
 
     let platformRequirements = "";
     let jsonSchema = "";
 
-    if (platform === "telegram") {
-      platformRequirements = "- telegram.body: готовый, полноценный и вовлекающий пост для канала на 3-5 абзацев с разметкой абзацев и списков. Должен содержать: сильный хук, раскрытие боли/проблемы, конкретный факт или механику решения, экспертные выводы и мягкий призыв к действию. Пост должен быть глубоким и содержательным, а не состоять из пары сухих строк.";
-      jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"telegram":{"format":"Пост","headline":"","body":"","tags":""}}}]}';
-    } else if (platform === "instagram") {
-      platformRequirements = "- instagram.body: сценарий Reels на 20-35 секунд: 4-5 кадров с таймингом, что в кадре, текст на экране, голос.";
-      jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"instagram":{"format":"Сценарий","headline":"","body":"","tags":""}}}]}';
-    } else if (platform === "youtube") {
-      platformRequirements = "- youtube.body: сценарий Shorts на 20-35 секунд: хук 0-3 сек, быстрый пример, вывод, призыв.";
-      jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"youtube":{"format":"Сценарий","headline":"","body":"","tags":""}}}]}';
+    if (platform === "dzen") {
+      platformRequirements = "- dzen.body: готовая, полноценная и глубокая SEO-оптимизированная статья/пост для Яндекс.Дзена на 4-7 абзацев с разметкой абзацев, подзаголовков (## заголовок) и списков. Должна содержать: сильный вовлекающий SEO-заголовок (в поле headline), цепляющее вступление, полезную информацию, раскрывающую ценность продукта/услуги, конкретные факты/доказательства и явный продающий CTA для оставления заявки.";
+      jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"dzen":{"format":"SEO-статья","headline":"","body":"","tags":""}}}]}';
+    } else if (platform === "telegram") {
+      platformRequirements = "- telegram.body: готовый, вовлекающий информационный пост для Telegram-канала на 3-5 абзацев с разметкой абзацев и списков. Должен быть живым, раскрывать внутреннюю кухню проекта, показывать, 'как все выглядит', или давать лаконичный анонс полезной статьи в Дзене. Должен содержать призыв к действию.";
+      jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"telegram":{"format":"Инфо-пост","headline":"","body":"","tags":""}}}]}';
     } else {
       platformRequirements = [
-        "- telegram.body: готовый, полноценный и вовлекающий пост для канала на 3-5 абзацев с разметкой абзацев и списков. Должен содержать: сильный хук, раскрытие боли/проблемы, конкретный факт или механику решения, экспертные выводы и мягкий призыв к действию.",
-        "- instagram.body: сценарий Reels на 20-35 секунд: 4-5 кадров с таймингом, что в кадре, текст на экране, голос.",
-        "- youtube.body: сценарий Shorts на 20-35 секунд: хук 0-3 сек, быстрый пример, вывод, призыв."
+        "- dzen.body: глубокая SEO-оптимизированная статья для Яндекс.Дзена на 4-7 абзацев с разметкой абзацев, H2/H3 подзаголовков (## заголовок) и списков, полезной информацией и CTA для оставления заявки.",
+        "- telegram.body: живой информационный пост для Telegram-канала на 3-5 абзацев с разметкой, рассказывающий о процессах компании или анонсирующий Дзен-статью."
       ].join("\n");
-      jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"telegram":{"format":"Пост","headline":"","body":"","tags":""},"instagram":{"format":"Сценарий","headline":"","body":"","tags":""},"youtube":{"format":"Сценарий","headline":"","body":"","tags":""}}}]}';
+      jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"dzen":{"format":"SEO-статья","headline":"","body":"","tags":""},"telegram":{"format":"Инфо-пост","headline":"","body":"","tags":""}}}]}';
     }
 
     // Специфика шаблона: для РСЯ и FAQ заставляем ИИ выдать тело в формате,
@@ -2049,10 +2031,10 @@ app.post("/api/refine", requireAuth, aiLimiter, enforceGenerationLimit, async (r
       Банк доказательств: ${safeProject.proof || ""} ${safeProject.facts || ""}.`;
     } else if (action === "shorten") {
       instruction = `Максимально сократи следующий текст, убери из него всю "воду" и лишние вводные слова. Сделай его емким, плотным и коротким, но сохрани ключевой оффер и CTA.`;
-    } else if (action === "adapt-rsy") {
-      instruction = `Переделай следующий текст под формат рекламного баннера РСЯ (Яндекс Директ). Выдай 1 супер-короткий кликабельный заголовок (до 10-15 слов) и 1 текст объявления (до 81 символа) с призывом.`;
-    } else if (action === "adapt-reels") {
-      instruction = `Переделай следующий текст в сценарий короткого видео Reels/Shorts на 20-30 секунд. Разбей его на 3-4 кадра, для каждого кратко укажи визуал и речь.`;
+    } else if (action === "adapt-dzen") {
+      instruction = `Переделай следующий текст под формат полноценной полезной SEO-статьи для Яндекс.Дзена. Структурируй его с помощью понятных подзаголовков (## заголовок), списков и абзацев. Сделай акцент на решении боли клиента, добавь пользу, ключевые слова и сильный продающий CTA в конце для оставления заявки.`;
+    } else if (action === "adapt-telegram") {
+      instruction = `Переделай следующий текст в живой, лаконичный информационный пост для Telegram-канала на 3-5 абзацев. Пиши человеческим языком, добавь немного уместных эмодзи, раздели на абзацы и сделай призыв к действию.`;
     } else {
       instruction = `Улучши следующий текст: сделай его более вовлекающим, чистым и продающим.`;
     }

@@ -1190,60 +1190,69 @@
       ];
 
       const platforms = {
-        telegram: { name: "Telegram", short: "готовый пост", icon: "TG" },
-        instagram: { name: "Instagram", short: "сценарий видео", icon: "IG" },
-        youtube: { name: "YouTube", short: "сценарий видео", icon: "YT" }
+        dzen: { name: "Яндекс Дзен", short: "SEO-статья / пост", icon: "DZ" },
+        telegram: { name: "Telegram", short: "инфо-пост / анонс", icon: "TG" }
       };
 
       const contentTemplates = [
         {
-          id: "telegram-sales",
-          name: "Продающий Telegram-пост",
+          id: "dzen-seo-sales",
+          name: "Продающая SEO-статья Дзен",
+          platform: "dzen",
+          goal: "получить поисковый трафик и заявки",
+          style: "экспертно, подробно, с разбором боли, доказательствами и CTA",
+          formatNote: "Структура: цепляющий заголовок, введение, раскрытие проблемы, метод решения с фактами, интеграция ключевых слов, призыв к действию с предложением оставить заявку.",
+          briefAdd: "Нужна SEO-статья для Дзена. Напиши глубокий текст, закрывающий боли целевой аудитории, с логичным переходом к нашему офферу.",
+          tag: "статьи"
+        },
+        {
+          id: "dzen-useful-info",
+          name: "SEO-инструкция / Гайд Дзен",
+          platform: "dzen",
+          goal: "привлечь целевых клиентов через пользу и SEO",
+          style: "пошагово, практически, понятно",
+          formatNote: "Пошаговая SEO-инструкция (## шаг 1 и т.д.), закрывающая конкретную проблему клиента, с интеграцией нашего продукта/услуги как лучшего решения.",
+          briefAdd: "Нужен полезный гайд-инструкция для Дзена. Важно: дать практическую пользу и естественно встроить рекламу наших услуг.",
+          tag: "инструкции"
+        },
+        {
+          id: "dzen-case",
+          name: "SEO-кейс Дзен",
+          platform: "dzen",
+          goal: "доказать экспертность и получить заявки",
+          style: "по фактам, с разбором процесса, цифрами и результатами",
+          formatNote: "Подробный кейс для Дзена: исходная задача, как решали шаг за шагом, итоговый результат в цифрах и выводы. Оптимизируй заголовок и текст под поиск.",
+          briefAdd: "Нужен кейс в Дзен. Опиши процесс работы, покажи результаты и подкрепи их нашими преимуществами.",
+          tag: "кейсы"
+        },
+        {
+          id: "telegram-info",
+          name: "Инфо-пост Telegram",
           platform: "telegram",
-          goal: "получить заявку",
-          style: "коротко, конкретно, с болью, доказательством и мягким призывом",
-          formatNote: "Структура: хук, проблема, механизм решения, доказательство, безопасный призыв. Без общих слов.",
-          briefAdd: "Нужен Telegram-пост для заявки. Важно: конкретная боль, факт или доказательство, понятный следующий шаг.",
-          tag: "заявки"
+          goal: "вовлечь аудиторию и показать продукт/услугу",
+          style: "живо, по-человечески, с эмодзи, без канцеляризмов",
+          formatNote: "Информационный пост для Telegram: интересные детали о проекте, процессе, внутренней кухне или процессах работы, короткие факты.",
+          briefAdd: "Нужен пост в Telegram. Опиши наши процессы, покажи внутреннюю кухню бизнеса или расскажи свежую новость.",
+          tag: "инфо"
         },
         {
-          id: "telegram-warmup",
-          name: "Прогрев перед продажей",
+          id: "telegram-dzen-copy",
+          name: "Анонс статьи Дзен в Telegram",
           platform: "telegram",
-          goal: "снять возражение и подготовить к заявке",
-          style: "человечески, экспертно, без давления",
-          formatNote: "Показать страх клиента, объяснить причину, дать критерии выбора и мягко подвести к расчету.",
-          briefAdd: "Нужен прогревающий пост: закрыть страхи, объяснить выбор и подготовить человека к обращению.",
-          tag: "прогрев"
+          goal: "перевести читателей из Telegram в Дзен",
+          style: "интригующе, кратко, с призывом перейти по ссылке",
+          formatNote: "Короткий тизер-анонс статьи из Дзена: обозначь главную проблему, дай интригующую зацепку и призови прочитать полную статью по ссылке.",
+          briefAdd: "Нужен короткий пост-анонс. Задача - завлечь читателя кликнуть по ссылке на Дзен.",
+          tag: "анонсы"
         },
         {
-          id: "reels-script",
-          name: "Reels-сценарий 25 секунд",
-          platform: "instagram",
-          goal: "зацепить холодную аудиторию",
-          style: "динамично, просто, с сильным первым кадром",
-          formatNote: "Дай сценарий по кадрам: 0-3 сек хук, 3-12 сек проблема, 12-20 сек решение, 20-25 сек призыв.",
-          briefAdd: "Нужен сценарий Reels на 20-30 секунд с текстом на экране и голосом.",
-          tag: "видео"
-        },
-        {
-          id: "shorts-script",
-          name: "YouTube Shorts",
-          platform: "youtube",
-          goal: "быстро объяснить пользу и привести к действию",
-          style: "ясно, экспертно, энергично",
-          formatNote: "Сценарий Shorts: хук 0-3 сек, пример, вывод, призыв. Добавь текст на экране.",
-          briefAdd: "Нужен короткий сценарий YouTube Shorts с быстрым объяснением пользы.",
-          tag: "shorts"
-        },
-        {
-          id: "case-post",
-          name: "Кейс / было-стало",
+          id: "faq-objection",
+          name: "FAQ / Закрытие возражений",
           platform: "telegram",
-          goal: "доказать результат",
-          style: "по фактам, без самовосхваления",
-          formatNote: "Структура: исходная ситуация, что сделали, результат, что это доказывает, следующий шаг.",
-          briefAdd: "Нужен пост-кейс. Если точных цифр нет, не придумывать, писать аккуратно.",
+          goal: "снять сомнения и страхи клиентов",
+          style: "честно, убедительно, с фактами и доказательствами",
+          formatNote: "Сгенерируй Q&A серию из 5 частых возражений (дорого, долго, нет гарантии) и сильных аргументированных ответов со ссылкой на доказательства и цены.",
+          briefAdd: "Нужен пост FAQ по закрытию главных возражений на основе фактов и цен.",
           tag: "доверие"
         },
         {
@@ -1255,25 +1264,15 @@
           formatNote: "Сгенерируй 10 коротких заголовков до 10-15 слов и 10 вариантов CTA. Боль, конкретика, безопасность.",
           briefAdd: "Нужны формулировки для баннеров РСЯ: боль, результат, доказательство или безопасность, короткий призыв.",
           tag: "реклама"
-        },
-        {
-          id: "faq-objection",
-          name: "FAQ / Закрытие возражений",
-          platform: "telegram",
-          goal: "снять сомнения и страхи клиентов",
-          style: "честно, убедительно, с фактами и доказательствами",
-          formatNote: "Сгенерируй Q&A серию из 5 частых возражений (дорого, долго, нет гарантии) и сильных аргументированных ответов со ссылкой на доказательства и цены.",
-          briefAdd: "Нужен пост FAQ по закрытию главных возражений на основе фактов и цен.",
-          tag: "доверие"
         }
       ];
 
       const defaultState = {
         activeTab: "dashboard",
         calendarView: "strip",
-        activeTemplateId: "telegram-sales",
+        activeTemplateId: "dzen-seo-sales",
         activeProjectId: "p_1",
-        activePlatform: "telegram",
+        activePlatform: "dzen",
         briefMode: "text",
         selectedIdeaId: "",
         selectedMediaId: "",
@@ -2136,6 +2135,74 @@
         return scenes;
       }
 
+      function renderDzenVisualizer(headline, text) {
+        const media = state.media.find(m => m.id === state.selectedMediaId);
+        const imageUrl = media && media.type?.startsWith("image/") ? media.url : "";
+        
+        const paragraphs = text.split(/\n+/).map(p => p.trim()).filter(Boolean);
+        const renderedBody = paragraphs.map(p => {
+          if (p.startsWith("##")) {
+            return `<h3 style="font-size: 18px; font-weight: 700; margin-top: 20px; margin-bottom: 8px; color: var(--text-main);">${escapeHtml(p.replace(/^##\s*/, ""))}</h3>`;
+          } else if (p.startsWith("#")) {
+            return `<h2 style="font-size: 20px; font-weight: 700; margin-top: 24px; margin-bottom: 12px; color: var(--text-main);">${escapeHtml(p.replace(/^#\s*/, ""))}</h2>`;
+          } else if (p.startsWith("-") || p.startsWith("*")) {
+            return `<li style="margin-left: 20px; margin-bottom: 6px; color: var(--text-main); list-style-type: disc;">${escapeHtml(p.replace(/^[-*]\s*/, ""))}</li>`;
+          }
+          return `<p style="margin-bottom: 14px; line-height: 1.6; color: var(--text-main); font-size: 15px;">${escapeHtml(p)}</p>`;
+        }).join("");
+
+        return `
+          <div class="panel" style="margin-top: 24px; border: 1px solid var(--border); background: #1a1a1a; padding: 24px; border-radius: var(--radius); max-width: 680px; margin-left: auto; margin-right: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 18px;">📰</span>
+                <span style="font-weight: 700; font-size: 14px; color: #fff; letter-spacing: 0.5px;">ЯНДЕКС ДЗЕН (СТАТЬЯ)</span>
+              </div>
+              <span class="chip info" style="font-size: 11px; font-weight: 600; background: #ff4c00; color: #fff;">dzen.ru</span>
+            </div>
+            
+            <article style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: left;">
+              <header style="margin-bottom: 20px;">
+                <h1 style="font-size: 26px; font-weight: 800; line-height: 1.3; color: #fff; margin-bottom: 12px; font-family: var(--font-sans);">
+                  ${escapeHtml(headline || "Заголовок статьи")}
+                </h1>
+                
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-muted);">
+                  <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px;">
+                    ${escapeHtml(activeProject().name?.slice(0, 2).toUpperCase() || "КЗ")}
+                  </div>
+                  <div>
+                    <div style="font-weight: 600; color: #fff;">${escapeHtml(activeProject().name || "Мой Канал")}</div>
+                    <div>Только что • ⏱️ ~3 мин чтения</div>
+                  </div>
+                </div>
+              </header>
+              
+              ${imageUrl ? `
+                <div style="margin: 20px 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border);">
+                  <img src="${escapeHtml(imageUrl)}" alt="Обложка статьи" style="width: 100%; height: auto; display: block; object-fit: cover; max-height: 340px;">
+                </div>
+              ` : ""}
+              
+              <div class="dzen-article-body" style="font-size: 15px; line-height: 1.6; color: #e0e0e0;">
+                ${renderedBody}
+              </div>
+              
+              <footer style="margin-top: 32px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px; display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; gap: 16px; color: var(--text-muted); font-size: 13px;">
+                  <span>👍 Лайк</span>
+                  <span>💬 Комментировать</span>
+                  <span>🔄 Поделиться</span>
+                </div>
+                <button class="btn" style="background: #fff; color: #000; font-weight: 600; border: none; padding: 6px 16px; font-size: 12px; border-radius: 20px; cursor: pointer;">
+                  Подписаться
+                </button>
+              </footer>
+            </article>
+          </div>
+        `;
+      }
+
       function renderReelsVisualizer(text) {
         const scenes = parseReelsScript(text);
         if (!scenes.length) return "";
@@ -2502,18 +2569,19 @@
 
         let visualizerHtml = "";
         const bodyText = content.body || "";
-        // Раскадровку показываем не только по шаблону Reels/Shorts, но и когда тело реально
-        // является сценарием (платформа instagram/youtube задаёт формат даже при «телеграм»-шаблоне).
+        const headlineText = content.headline || "";
         const looksLikeScript = /(^|\n)\s*(Кадр|Сцена|Scene)\s*\d/i.test(bodyText);
 
-        if (state.activeTemplateId === "reels-script" || state.activeTemplateId === "shorts-script" || looksLikeScript) {
-          visualizerHtml = renderReelsVisualizer(bodyText);
-        } else if (state.activeTemplateId === "rsy-banner") {
+        if (state.activeTemplateId === "rsy-banner") {
           visualizerHtml = renderRsyVisualizer(bodyText);
         } else if (state.activeTemplateId === "faq-objection") {
           visualizerHtml = renderFaqVisualizer(bodyText);
-        } else if (["telegram-sales", "telegram-warmup", "case-post"].includes(state.activeTemplateId)) {
+        } else if (state.activePlatform === "dzen") {
+          visualizerHtml = renderDzenVisualizer(headlineText, bodyText);
+        } else if (state.activePlatform === "telegram") {
           visualizerHtml = renderAlternativeHooksVisualizer(bodyText);
+        } else if (looksLikeScript) {
+          visualizerHtml = renderReelsVisualizer(bodyText);
         }
 
         return `
@@ -2619,8 +2687,8 @@
                           <button class="btn small" data-action="refine-pain" type="button" style="background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.2); color: #f87171;">💥 Усилить боль</button>
                           <button class="btn small" data-action="refine-proof" type="button" style="background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.2); color: #4ade80;">🛡️ Добавить факт</button>
                           <button class="btn small" data-action="refine-shorten" type="button" style="background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.2); color: #60a5fa;">✂️ Сократить</button>
-                          <button class="btn small" data-action="refine-rsy" type="button" style="background: rgba(168, 85, 247, 0.08); border-color: rgba(168, 85, 247, 0.2); color: #c084fc;">🎯 Под РСЯ</button>
-                          <button class="btn small" data-action="refine-reels" type="button" style="background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.2); color: #facc15;">🎬 Под Reels</button>
+                          <button class="btn small" data-action="refine-dzen" type="button" style="background: rgba(255, 76, 0, 0.08); border-color: rgba(255, 76, 0, 0.2); color: #ffa07a;">✍️ Под Дзен (SEO)</button>
+                          <button class="btn small" data-action="refine-telegram" type="button" style="background: rgba(34, 158, 217, 0.08); border-color: rgba(34, 158, 217, 0.2); color: #38bdf8;">📢 Под Telegram</button>
                         </div>
                       </details>
                     </label>
@@ -2822,25 +2890,6 @@
                 <label class="field"><span class="label">Bot Token</span><input class="input" type="password" data-action="setting-input" name="telegramBotToken" value="${escapeHtml(s.telegramBotToken)}" /></label>
                 <label class="field"><span class="label">Chat ID</span><input class="input" data-action="setting-input" name="telegramChatId" value="${escapeHtml(s.telegramChatId)}" /></label>
                 <button class="btn primary" data-action="save-server-config">Сохранить</button>
-              </div>
-            </div>
-            <div class="panel">
-              <h2 class="title">Instagram</h2>
-              <div class="form" style="margin-top: 16px;">
-                <label class="field"><span class="label">Access Token</span><input class="input" type="password" data-action="setting-input" name="instagramAccessToken" value="${escapeHtml(s.instagramAccessToken)}" /></label>
-                <label class="field"><span class="label">Instagram User ID</span><input class="input" data-action="setting-input" name="instagramUserId" value="${escapeHtml(s.instagramUserId)}" /></label>
-                <button class="btn primary" data-action="save-server-config">Сохранить</button>
-              </div>
-            </div>
-            <div class="panel">
-              <h2 class="title">YouTube</h2>
-              <div class="form" style="margin-top: 16px;">
-                ${ytConnected
-            ? `<div class="metric" style="padding: 12px;"><div class="metric-label">Канал</div><div class="metric-value" style="font-size: 14px;">${escapeHtml(s.youtubeChannelId || 'подключён')}</div></div>
-                     <button class="btn danger" data-action="youtube-disconnect">Отключить YouTube</button>`
-            : (ytEnabled
-              ? `<button class="btn primary" data-action="youtube-connect">Подключить YouTube</button>`
-              : `<div class="notice" style="margin: 0;">YouTube OAuth не настроен на сервере. Добавь <code>YOUTUBE_CLIENT_ID</code> и <code>YOUTUBE_CLIENT_SECRET</code> в <code>.env</code>.</div>`)}
               </div>
             </div>
           </div>
@@ -3259,8 +3308,8 @@
         if (a === "refine-pain") { refineText("amplify-pain"); return; }
         if (a === "refine-proof") { refineText("add-proof"); return; }
         if (a === "refine-shorten") { refineText("shorten"); return; }
-        if (a === "refine-rsy") { refineText("adapt-rsy"); return; }
-        if (a === "refine-reels") { refineText("adapt-reels"); return; }
+        if (a === "refine-dzen") { refineText("adapt-dzen"); return; }
+        if (a === "refine-telegram") { refineText("adapt-telegram"); return; }
         if (a === "clear-workspace-all") {
           if (confirm("Вы действительно хотите полностью очистить рабочую область? Это удалит все проекты, идеи, медиафайлы и очередь публикаций!")) {
             state.ideas = []; state.queue = []; state.media = []; state.logs = []; state.critic = null;
