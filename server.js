@@ -42,12 +42,21 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-17-telegram-ipv4-v16";
+const APP_BUILD = "2026-07-17-telegram-direct-ip-v17";
 
+const TELEGRAM_API_IPV4 = process.env.TELEGRAM_API_IPV4 || "149.154.166.110";
 const telegramDispatcher = new UndiciAgent({
   connect: {
     family: 4,
-    timeout: 20000
+    timeout: 20000,
+    servername: "api.telegram.org",
+    lookup: (_hostname, options, callback) => {
+      if (options?.all) {
+        callback(null, [{ address: TELEGRAM_API_IPV4, family: 4 }]);
+        return;
+      }
+      callback(null, TELEGRAM_API_IPV4, 4);
+    }
   }
 });
 
