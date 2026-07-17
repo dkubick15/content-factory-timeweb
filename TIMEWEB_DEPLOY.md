@@ -39,6 +39,10 @@ MAX_UPLOAD_MB=200
 AI_TIMEOUT_MS=180000
 AI_MAX_TOKENS=8000
 
+# Личный вход владельца
+DEMO_EMAIL=ваш-логин
+DEMO_PASSWORD=ваш-пароль
+
 # Настройки ИИ-агента Timeweb (meweb.cloud/my/cloud-ai/agents)
 TIMEWEB_API_KEY=ваш-jwt-токен-авторизации
 TIMEWEB_AGENT_ID=id-вашего-созданного-агента
