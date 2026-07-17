@@ -14,6 +14,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
 
+// Timeweb-контейнер может получать IPv6-адрес Telegram API без рабочего
+// IPv6-маршрута. Предпочитаем IPv4, чтобы публикация не падала с fetch failed.
+dns.setDefaultResultOrder("ipv4first");
+
 dotenv.config();
 dotenv.config({ path: "timeweb-env-ready.env" });
 
@@ -37,7 +41,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-17-timeweb-agent-restored-v14";
+const APP_BUILD = "2026-07-17-telegram-ipv4-v15";
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -2587,8 +2591,11 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
     });
   } catch (error) {
     console.error("telegram publish error:", error);
+    const cause = String(error?.cause?.message || "").trim();
     res.status(500).json({
-      error: error.message || "Ошибка публикации в Telegram"
+      error: cause
+        ? `Telegram недоступен с сервера: ${cause}`
+        : (error.message || "Ошибка публикации в Telegram")
     });
   }
 });
