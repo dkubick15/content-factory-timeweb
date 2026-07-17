@@ -1,6 +1,5 @@
 node_modules/
 .env
-timeweb-env-ready.env
 content-factory-timeweb-fix.zip
 .DS_Store
 *.log
