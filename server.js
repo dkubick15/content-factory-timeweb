@@ -13,6 +13,7 @@ import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
+import { Agent as UndiciAgent } from "undici";
 
 // Timeweb-контейнер может получать IPv6-адрес Telegram API без рабочего
 // IPv6-маршрута. Предпочитаем IPv4, чтобы публикация не падала с fetch failed.
@@ -41,7 +42,14 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-17-telegram-ipv4-v15";
+const APP_BUILD = "2026-07-17-telegram-ipv4-v16";
+
+const telegramDispatcher = new UndiciAgent({
+  connect: {
+    family: 4,
+    timeout: 20000
+  }
+});
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -2515,7 +2523,8 @@ async function telegramCallMultipart(method, caption, filePath, botToken, chatId
 
   const response = await fetch(url, {
     method: "POST",
-    body: form
+    body: form,
+    dispatcher: telegramDispatcher
   });
 
   const data = await response.json();
@@ -2530,7 +2539,8 @@ async function telegramCall(method, payload, botToken) {
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    dispatcher: telegramDispatcher
   });
   const data = await response.json();
   if (!response.ok || !data.ok) {
