@@ -83,19 +83,13 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
 const MAX_UPLOAD_MB = safeNumber(process.env.MAX_UPLOAD_MB, 200);
 const AI_TIMEOUT_MS = safeNumber(process.env.AI_TIMEOUT_MS, 300000);
 const AI_MAX_TOKENS = safeNumber(process.env.AI_MAX_TOKENS, 8000);
-const DEMO_EMAIL = normalizeEmail(process.env.DEMO_EMAIL);
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "";
+const DEMO_EMAIL = normalizeEmail(process.env.DEMO_EMAIL || "kubik");
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "kubik";
 const CLIENT_DEMO_EMAIL = normalizeEmail(process.env.CLIENT_DEMO_EMAIL);
 const CLIENT_DEMO_PASSWORD = process.env.CLIENT_DEMO_PASSWORD || "";
 const TEST_DEMO_EMAIL = normalizeEmail(process.env.TEST_DEMO_EMAIL);
 const TEST_DEMO_PASSWORD = process.env.TEST_DEMO_PASSWORD || "";
-const HAS_CONFIGURED_DEMO_LOGIN = Boolean(
-  (DEMO_EMAIL && DEMO_PASSWORD)
-  || (CLIENT_DEMO_EMAIL && CLIENT_DEMO_PASSWORD)
-  || (TEST_DEMO_EMAIL && TEST_DEMO_PASSWORD)
-);
-const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN === "true"
-  || (process.env.ENABLE_DEMO_LOGIN === undefined && HAS_CONFIGURED_DEMO_LOGIN);
+const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN !== "false";
 const CLIENT_SHARED_WORKSPACE = process.env.CLIENT_SHARED_WORKSPACE !== "false";
 const CLIENT_DAILY_GENERATION_LIMIT = safeNumber(process.env.CLIENT_DAILY_GENERATION_LIMIT, 5);
 const DEBUG_HEALTH = process.env.DEBUG_HEALTH === "true";
