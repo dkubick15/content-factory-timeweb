@@ -1913,6 +1913,50 @@ document.addEventListener("DOMContentLoaded", () => {
     state.activeTab = "queue"; render(); scrollToTop(); showToast(isDzen ? "Статья готова к публикации" : "Добавлено в очередь");
     pushWorkspace();
   }
+  async function publishTelegramFromBrowser(post, media) {
+    const config = await request("/api/telegram/browser-config", { method: "POST" });
+    const text = formatPublicationText(post);
+    const isImage = Boolean(media?.type?.startsWith("image/"));
+    const method = media?.url ? (isImage ? "sendPhoto" : "sendVideo") : "sendMessage";
+    const payload = media?.url
+      ? {
+          chat_id: config.chatId,
+          [isImage ? "photo" : "video"]: new URL(media.url, window.location.origin).href,
+          caption: text.slice(0, 1024)
+        }
+      : {
+          chat_id: config.chatId,
+          text: text.slice(0, 4096)
+        };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    let response;
+
+    try {
+      response = await fetch(`https://api.telegram.org/bot${config.botToken}/${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+        cache: "no-store"
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error("Telegram не ответил за 30 секунд.");
+      }
+      throw new Error("Браузер не смог подключиться к Telegram.");
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.description || "Telegram отклонил публикацию.");
+    }
+    return data;
+  }
+
   async function publishOne(id) {
     const post = state.queue.find(q => q.id === id); if (!post) return;
     if (post.platform === "dzen") {
@@ -1922,9 +1966,21 @@ document.addEventListener("DOMContentLoaded", () => {
     post.state = "Публикуется"; render();
     try {
       const media = state.media.find((m) => m.id === post.mediaId);
-      await request("/api/publish/" + post.platform, { method: "POST", body: { post, media: media ? { url: media.url, type: media.type } : null } });
+      const mediaPayload = media ? { url: media.url, type: media.type } : null;
+      if (post.platform === "telegram") {
+        await publishTelegramFromBrowser(post, mediaPayload);
+      } else {
+        await request("/api/publish/" + post.platform, { method: "POST", body: { post, media: mediaPayload } });
+      }
       post.status = "published"; post.state = "Опубликовано"; showToast("Опубликовано");
-    } catch (e) { post.status = "error"; post.state = "Ошибка"; showToast("Ошибка публикации"); } finally { render(); }
+      pushWorkspace();
+    } catch (e) {
+      post.status = "error";
+      post.state = "Ошибка";
+      showToast(cleanError(e.message));
+    } finally {
+      render();
+    }
   }
 
   function formatPublicationText(post) {

@@ -41,7 +41,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-17-telegram-direct-https-v18";
+const APP_BUILD = "2026-07-17-telegram-browser-fallback-v19";
 
 const TELEGRAM_API_IPV4 = process.env.TELEGRAM_API_IPV4 || "149.154.166.110";
 
@@ -192,7 +192,7 @@ app.use(helmet({
       styleSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       mediaSrc: ["'self'", "blob:", "https:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", "https://api.telegram.org"],
       fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
@@ -2653,6 +2653,29 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
         : (error.message || "Ошибка публикации в Telegram")
     });
   }
+});
+
+app.post("/api/telegram/browser-config", requireAuth, publishLimiter, (req, res) => {
+  const userSettings = getUserSettingsForServer(req.workspaceUser);
+  const botToken = userSettings.telegramBotToken;
+  const chatId = userSettings.telegramChatId;
+
+  if (!botToken || !chatId) {
+    return res.status(400).json({
+      error: "В настройках аккаунта не подключён Telegram Bot Token или Telegram Chat ID."
+    });
+  }
+
+  // Timeweb может блокировать исходящие соединения к Telegram. Для личного
+  // приложения отдаём данные только авторизованному браузеру и не кешируем их:
+  // браузер отправит публикацию напрямую в официальный Telegram Bot API.
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.json({
+    ok: true,
+    botToken,
+    chatId
+  });
 });
 
 // ─────────────────────────────────────────────────────────────
