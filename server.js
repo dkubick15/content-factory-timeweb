@@ -5,7 +5,11 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import crypto from "crypto";
+import dns from "dns/promises";
 import fs from "fs";
+import http from "http";
+import https from "https";
+import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
@@ -34,8 +38,6 @@ process.env.PORT = process.env.PORT || '8080';
 
 
 const APP_BUILD = "2026-05-30-brief-import-v12";
-const FALLBACK_TIMEWEB_AGENT_ID = "40f010e8-9dd7-473c-812f-81b65aba981f";
-const FALLBACK_TIMEWEB_API_KEY = "eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjFrYnhacFJNQGJSI0tSbE1xS1lqIn0.eyJ1c2VyIjoia2UwNTQwODIiLCJ0eXBlIjoiYXBpX2tleSIsImFwaV9rZXlfaWQiOiI3ZjBjNzIwMy0wNGVkLTRlNjUtYWYwZi0xNDcwNjZmOGY4ZWYiLCJpYXQiOjE3ODE5Nzk1ODd9.WvCbdfNbVTytSk6d7PE_mOKDtb2HoEU8BDPkcH_YXNHUJjH8X2XS5q6qldl86BQKJ4vL7cFw6qBZvRf40xczfqiOKmGV9GsVsOOS50OOlzk3POVQQ1LMda7fmjyqfJoCQ7-jMMeisiQZ1yQqEb0smlOKMoe452nRKhlcYSkInzrFU--8TJMl9s5wEWzxqI_d3FJPnY8iWrXurtByTYFgH_Lm63-YnfVKuMbiEFtV4RiFPJLwz21lkh3l0NU23sjAQce4cldk7E0durH4nKY9ZAp7x0_MRGbwCsv-Ni7OGHBpmL7FO_ZO-hZbfO9bNpkXZBFif9EIzz9Odn97z4GP3NIJDzDQCFfLMAKIx-1C80d9jNnYdaabzjI3klgVKgAaT-YR_e8drBfrZnD9dzgTRtdQIqK5yJ728_mk-Uv_VTKHCBktpW1YOpLZyv7buFsot6un0ZZmT1iljpb5pnU13NT9MoeRDNny3GuloFIToMcuezftrNJIhOAObeqIv9yj";
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -50,50 +52,13 @@ function extractUuid(value) {
 }
 
 function resolveTimewebEnv() {
-  const keyNames = ["TIMEWEB_API_KEY", "TIMEWEB_KEY", "logi", "LOGI", "TIMEWEB_ENV", "API_KEY", "KEY"];
-  const agentNames = ["TIMEWEB_AGENT_ID", "TIMEWEB_ENV", "logi", "LOGI", "AGENT_ID"];
-
-  for (const name of keyNames) {
-    const key = extractJwt(process.env[name]);
-    if (key) {
-      const agentFromSameValue = extractUuid(process.env[name]);
-      return {
-        apiKey: key,
-        apiKeySource: name,
-        agentId: extractUuid(process.env.TIMEWEB_AGENT_ID) || agentFromSameValue || FALLBACK_TIMEWEB_AGENT_ID,
-        agentIdSource: process.env.TIMEWEB_AGENT_ID ? "TIMEWEB_AGENT_ID" : agentFromSameValue ? name : "fallback"
-      };
-    }
-  }
-
-  for (const [name, value] of Object.entries(process.env)) {
-    const key = extractJwt(value);
-    if (key) {
-      let agentId = "";
-      let agentIdSource = "";
-
-      for (const agentName of agentNames) {
-        agentId = extractUuid(process.env[agentName]);
-        if (agentId) {
-          agentIdSource = agentName;
-          break;
-        }
-      }
-
-      return {
-        apiKey: key,
-        apiKeySource: name,
-        agentId: agentId || FALLBACK_TIMEWEB_AGENT_ID,
-        agentIdSource: agentIdSource || "fallback"
-      };
-    }
-  }
-
+  const apiKey = extractJwt(process.env.TIMEWEB_API_KEY || process.env.TIMEWEB_KEY);
+  const agentId = extractUuid(process.env.TIMEWEB_AGENT_ID || process.env.AGENT_ID);
   return {
-    apiKey: FALLBACK_TIMEWEB_API_KEY,
-    apiKeySource: "fallback_hardcoded",
-    agentId: extractUuid(process.env.TIMEWEB_AGENT_ID) || FALLBACK_TIMEWEB_AGENT_ID,
-    agentIdSource: process.env.TIMEWEB_AGENT_ID ? "TIMEWEB_AGENT_ID" : "fallback"
+    apiKey,
+    apiKeySource: apiKey ? (process.env.TIMEWEB_API_KEY ? "TIMEWEB_API_KEY" : "TIMEWEB_KEY") : "missing",
+    agentId,
+    agentIdSource: agentId ? (process.env.TIMEWEB_AGENT_ID ? "TIMEWEB_AGENT_ID" : "AGENT_ID") : "missing"
   };
 }
 
@@ -118,13 +83,13 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
 const MAX_UPLOAD_MB = safeNumber(process.env.MAX_UPLOAD_MB, 200);
 const AI_TIMEOUT_MS = safeNumber(process.env.AI_TIMEOUT_MS, 300000);
 const AI_MAX_TOKENS = safeNumber(process.env.AI_MAX_TOKENS, 8000);
-const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN !== "false";
-const DEMO_EMAIL = process.env.DEMO_EMAIL || "kubik";
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "kubik";
-const CLIENT_DEMO_EMAIL = process.env.CLIENT_DEMO_EMAIL || "client";
-const CLIENT_DEMO_PASSWORD = process.env.CLIENT_DEMO_PASSWORD || "client123";
-const TEST_DEMO_EMAIL = process.env.TEST_DEMO_EMAIL || "test2";
-const TEST_DEMO_PASSWORD = process.env.TEST_DEMO_PASSWORD || "test123";
+const ENABLE_DEMO_LOGIN = process.env.ENABLE_DEMO_LOGIN === "true";
+const DEMO_EMAIL = normalizeEmail(process.env.DEMO_EMAIL);
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "";
+const CLIENT_DEMO_EMAIL = normalizeEmail(process.env.CLIENT_DEMO_EMAIL);
+const CLIENT_DEMO_PASSWORD = process.env.CLIENT_DEMO_PASSWORD || "";
+const TEST_DEMO_EMAIL = normalizeEmail(process.env.TEST_DEMO_EMAIL);
+const TEST_DEMO_PASSWORD = process.env.TEST_DEMO_PASSWORD || "";
 const CLIENT_SHARED_WORKSPACE = process.env.CLIENT_SHARED_WORKSPACE !== "false";
 const CLIENT_DAILY_GENERATION_LIMIT = safeNumber(process.env.CLIENT_DAILY_GENERATION_LIMIT, 5);
 const DEBUG_HEALTH = process.env.DEBUG_HEALTH === "true";
@@ -213,7 +178,23 @@ const corsOrigin = process.env.CORS_ORIGIN
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.set("trust proxy", 1);
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      mediaSrc: ["'self'", "blob:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", "data:"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+      upgradeInsecureRequests: null
+    }
+  },
   crossOriginEmbedderPolicy: false
 }));
 app.use((req, res, next) => {
@@ -276,6 +257,13 @@ for (const iconFile of [
   app.get(`/${iconFile}`, (req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(path.join(__dirname, iconFile));
+  });
+}
+
+for (const assetFile of ["style.css", "script.js"]) {
+  app.get(`/${assetFile}`, (req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(path.join(__dirname, assetFile));
   });
 }
 
@@ -357,14 +345,193 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function isPrivateIp(address) {
+  const value = String(address || "").trim().toLowerCase();
+  if (!value) return true;
+
+  if (value.startsWith("::ffff:")) {
+    return isPrivateIp(value.slice(7));
+  }
+
+  if (net.isIPv4(value)) {
+    const [a, b] = value.split(".").map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      a >= 224
+    );
+  }
+
+  if (net.isIPv6(value)) {
+    return (
+      value === "::" ||
+      value === "::1" ||
+      value.startsWith("fc") ||
+      value.startsWith("fd") ||
+      value.startsWith("fe8") ||
+      value.startsWith("fe9") ||
+      value.startsWith("fea") ||
+      value.startsWith("feb")
+    );
+  }
+
+  return true;
+}
+
+async function assertPublicHttpUrl(rawUrl) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawUrl);
+  } catch {
+    throw new Error("Укажи полную ссылку, например https://site.ru");
+  }
+
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw new Error("Ссылка должна начинаться с http:// или https://");
+  }
+
+  const hostname = parsedUrl.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local")
+  ) {
+    throw new Error("Локальные адреса нельзя импортировать.");
+  }
+
+  let addresses;
+  try {
+    addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+  } catch {
+    throw new Error("Не удалось определить адрес сайта.");
+  }
+  if (!addresses.length || addresses.some((item) => isPrivateIp(item.address))) {
+    throw new Error("Локальные и служебные адреса нельзя импортировать.");
+  }
+
+  return parsedUrl;
+}
+
+function publicDnsLookup(hostname, options, callback) {
+  dns.lookup(hostname, { all: true, verbatim: true })
+    .then((addresses) => {
+      if (!addresses.length || addresses.some((item) => isPrivateIp(item.address))) {
+        throw new Error("Локальные и служебные адреса нельзя импортировать.");
+      }
+
+      if (options?.all) {
+        callback(null, addresses);
+        return;
+      }
+
+      const address = options?.family
+        ? addresses.find((item) => item.family === Number(options.family))
+        : addresses[0];
+      if (!address) {
+        throw new Error("Не удалось определить публичный адрес сайта.");
+      }
+      callback(null, address.address, address.family);
+    })
+    .catch((error) => callback(error));
+}
+
+function requestPublicPage(parsedUrl, maxBytes = 2 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const transport = parsedUrl.protocol === "https:" ? https : http;
+    const request = transport.get(parsedUrl, {
+      headers: {
+        "User-Agent": "ContentFactoryBot/1.0",
+        Accept: "text/html,text/plain;q=0.9"
+      },
+      lookup: publicDnsLookup,
+      timeout: 15000
+    }, (response) => {
+      const status = Number(response.statusCode || 0);
+      const location = response.headers.location || "";
+      if (status >= 300 && status < 400) {
+        response.resume();
+        resolve({ redirect: location });
+        return;
+      }
+
+      if (status < 200 || status >= 300) {
+        response.resume();
+        reject(new Error(`Сайт не открылся: HTTP ${status || "unknown"}`));
+        return;
+      }
+
+      const contentType = String(response.headers["content-type"] || "").toLowerCase();
+      if (contentType && !contentType.includes("text/html") && !contentType.includes("text/plain")) {
+        response.resume();
+        reject(new Error("По ссылке нет HTML-страницы с текстом."));
+        return;
+      }
+
+      const declaredLength = Number(response.headers["content-length"] || 0);
+      if (declaredLength > maxBytes) {
+        response.resume();
+        reject(new Error("Страница слишком большая для импорта."));
+        return;
+      }
+
+      const chunks = [];
+      let total = 0;
+      response.on("data", (chunk) => {
+        total += chunk.length;
+        if (total > maxBytes) {
+          request.destroy(new Error("Страница слишком большая для импорта."));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on("end", () => {
+        resolve({ html: Buffer.concat(chunks).toString("utf8") });
+      });
+      response.on("error", reject);
+    });
+
+    request.on("timeout", () => {
+      request.destroy(new Error("Сайт не ответил вовремя."));
+    });
+    request.on("error", reject);
+  });
+}
+
+async function fetchPublicHtml(rawUrl) {
+  let currentUrl = await assertPublicHttpUrl(rawUrl);
+
+  for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+    const response = await requestPublicPage(currentUrl);
+
+    if (response.redirect !== undefined) {
+      const location = response.redirect;
+      if (!location || redirectCount === 3) {
+        throw new Error("Сайт отправляет по слишком длинной цепочке перенаправлений.");
+      }
+      currentUrl = await assertPublicHttpUrl(new URL(location, currentUrl).toString());
+      continue;
+    }
+
+    return {
+      html: response.html,
+      url: currentUrl.toString()
+    };
+  }
+
+  throw new Error("Не удалось открыть сайт.");
+}
+
 function validateAuthBody(body = {}, mode = "login") {
   const email = normalizeEmail(body.email);
   const password = String(body.password || "");
-  const isConfiguredDemoLogin = mode === "login" && (
-    email === normalizeEmail(DEMO_EMAIL) ||
-    email === normalizeEmail(CLIENT_DEMO_EMAIL) ||
-    email === normalizeEmail(TEST_DEMO_EMAIL)
-  );
+  const demoEmails = [DEMO_EMAIL, CLIENT_DEMO_EMAIL, TEST_DEMO_EMAIL].filter(Boolean);
+  const isConfiguredDemoLogin = mode === "login" && ENABLE_DEMO_LOGIN && demoEmails.includes(email);
 
   if (!isValidEmail(email) && !isConfiguredDemoLogin) {
     return { error: "Укажи нормальный email." };
@@ -844,12 +1011,15 @@ function looksLikeClarification(text) {
 }
 
 function buildFallbackImagePrompt(originalText) {
-  return `Realistic editorial photo for an automotive service marketing post.
-Scene: a professional mechanic in a clean car repair workshop inspecting a used contract engine on a workbench.
-Visible details: engine block, diagnostic tools, documents, VIN/checklist, serious expert atmosphere.
-Mood: trustworthy, practical, not stock-looking, natural light, real camera photo, high detail.
-No text, no logos, no watermark.
-Source topic: ${String(originalText).slice(0, 500)}`.trim();
+  const source = cleanText(originalText, 1200);
+  return [
+    "Реалистичная редакционная фотография по теме материала ниже.",
+    "Покажи главный предмет, процесс или ситуацию из исходного текста без выдуманных брендов, цифр, документов и обещаний.",
+    "Естественный свет, правдоподобная среда, спокойная коммерческая композиция, без ощущения случайного стока.",
+    "Без текста, логотипов, водяных знаков и коллажей.",
+    "",
+    `Тема материала: ${source}`
+  ].join("\n");
 }
 
 function tryParseJson(value) {
@@ -1172,11 +1342,31 @@ function fallbackIdeasFromText(text, ideaCount, project = {}) {
   const finalTitles = uniqueTexts([...titles, ...seed]).slice(0, Math.max(1, Math.min(ideaCount, 20)));
 
   return finalTitles.map((title, index) => {
-    const body = [
-      `Хук: ${title}.`,
-      project.pain ? `Проблема: ${project.pain}.` : "Проблема: человек не видит конкретной причины доверять и оставлять заявку.",
-      project.proof ? `Механизм: ${project.proof}.` : "Механизм: показать боль, причину потери денег и понятный следующий шаг.",
-      project.offer ? `Переход к офферу: ${project.offer}.` : "Переход к офферу: предложить расчёт, разбор или подбор решения."
+    const proofItems = [project.proof, project.facts].filter(Boolean);
+    const nextStep = project.nextStep || project.leadMagnet || "";
+    const articleBody = [
+      title,
+      "",
+      project.pain ? `В материале разберём проблему: ${project.pain}.` : "В материале разберём тему по шагам и отделим подтверждённые факты от предположений.",
+      "",
+      "## Что важно понять до выбора решения",
+      project.offer
+        ? `Рассматриваем решение: ${project.offer}.`
+        : "Сначала зафиксируй исходную задачу, ограничения и критерии выбора. Не подменяй их общими обещаниями.",
+      "",
+      proofItems.length ? "## Что можно подтвердить" : "## Какие данные нужно проверить",
+      ...(proofItems.length
+        ? proofItems.map((item) => `- ${item}`)
+        : [
+          "- условия и ограничения",
+          "- реальные сроки и стоимость",
+          "- примеры и документы, которые можно показать читателю"
+        ]),
+      "",
+      "## Вывод",
+      nextStep
+        ? nextStep
+        : "Перед публикацией дополни черновик фактами из проекта и сформулируй безопасный следующий шаг для читателя."
     ].join("\n");
 
     return {
@@ -1184,18 +1374,18 @@ function fallbackIdeasFromText(text, ideaCount, project = {}) {
       angle: index % 2 ? "Разбор ошибки" : "Боль клиента",
       score: 90 - index,
       pillar: project.common || "Контент",
-      status: "Собрано из ответа ИИ",
+      status: "Черновик — проверь факты",
       formats: {
         dzen: {
           format: "SEO-статья",
           headline: title,
-          body: `${title}\n\nПолезный разбор темы...\n\n- Важный факт 1\n- Важный факт 2\n\nКак мы это решаем: ${project.offer || 'наши услуги'}.\nОставьте заявку, чтобы получить консультацию!`,
+          body: articleBody,
           tags: ""
         },
         telegram: {
           format: "Инфо-пост",
           headline: title,
-          body,
+          body: articleBody,
           tags: ""
         }
       }
@@ -1207,10 +1397,11 @@ function defaultWorkspace() {
   return {
     activeProjectId: "p_1",
     activePlatform: "dzen",
+    activeTemplateId: "dzen-seo-sales",
     selectedIdeaId: "",
     selectedMediaId: "",
     planner: {
-      placement: "Telegram",
+      placement: "Дзен",
       goal: "получить заявку",
       reason: "",
       formatNote: ""
@@ -1237,6 +1428,7 @@ function sanitizeWorkspace(input = {}) {
     activePlatform: ["dzen", "telegram"].includes(input.activePlatform)
       ? input.activePlatform
       : base.activePlatform,
+    activeTemplateId: cleanText(input.activeTemplateId || base.activeTemplateId, 120),
     selectedIdeaId: String(input.selectedIdeaId || ""),
     selectedMediaId: String(input.selectedMediaId || ""),
     planner: {
@@ -1254,12 +1446,17 @@ function sanitizeWorkspace(input = {}) {
     const media = workspace.media.find((item) => item.id && item.id === post.mediaId) || {};
     const publishDate = post.publishDate || datePartServer(post.scheduledAt);
     const publishTime = post.publishTime || timePartServer(post.scheduledAt);
+    const platform = ["dzen", "telegram", "instagram", "youtube"].includes(post.platform)
+      ? post.platform
+      : "dzen";
+    const sourceStatus = post.status || (post.state === "Опубликовано" ? "published" : "scheduled");
+    const status = platform === "dzen" && sourceStatus === "scheduled" ? "ready" : sourceStatus;
     return {
       ...post,
       id: String(post.id || crypto.randomUUID()),
-      platform: ["dzen", "telegram"].includes(post.platform) ? post.platform : "dzen",
-      status: post.status || (post.state === "Опубликовано" ? "published" : "scheduled"),
-      state: post.state || statusLabel(post.status || "scheduled"),
+      platform,
+      status,
+      state: statusLabel(status),
       publishDate,
       publishTime,
       scheduledAt: post.scheduledAt || [publishDate, publishTime].filter(Boolean).join("T"),
@@ -1283,6 +1480,7 @@ function timePartServer(value) {
 function statusLabel(status) {
   const map = {
     draft: "Черновик",
+    ready: "Готово к публикации",
     scheduled: "Запланировано",
     publishing: "Публикуется",
     published: "Опубликовано",
@@ -1382,13 +1580,13 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
   if (ENABLE_DEMO_LOGIN) {
     let demoChanged = false;
 
-    if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
+    if (DEMO_EMAIL && DEMO_PASSWORD && email === DEMO_EMAIL && password === DEMO_PASSWORD) {
       const result = await ensureDemoUser(store, DEMO_EMAIL, DEMO_PASSWORD, "kubik-admin-id");
       demoChanged = demoChanged || result.changed;
-    } else if (email === CLIENT_DEMO_EMAIL && password === CLIENT_DEMO_PASSWORD) {
+    } else if (CLIENT_DEMO_EMAIL && CLIENT_DEMO_PASSWORD && email === CLIENT_DEMO_EMAIL && password === CLIENT_DEMO_PASSWORD) {
       const result = await ensureDemoUser(store, CLIENT_DEMO_EMAIL, CLIENT_DEMO_PASSWORD, "client-demo-id");
       demoChanged = demoChanged || result.changed;
-    } else if (email === TEST_DEMO_EMAIL && password === TEST_DEMO_PASSWORD) {
+    } else if (TEST_DEMO_EMAIL && TEST_DEMO_PASSWORD && email === TEST_DEMO_EMAIL && password === TEST_DEMO_PASSWORD) {
       const result = await ensureDemoUser(store, TEST_DEMO_EMAIL, TEST_DEMO_PASSWORD, "test-demo-2-id");
       demoChanged = demoChanged || result.changed;
     }
@@ -1645,29 +1843,8 @@ app.post("/api/project/import-url", requireAuth, aiLimiter, async (req, res) => 
     }
 
     const rawUrl = cleanText(req.body?.url || "", 1000);
-    let parsedUrl;
-    try {
-      parsedUrl = new URL(rawUrl);
-    } catch {
-      return res.status(400).json({ error: "Укажи полную ссылку, например https://site.ru" });
-    }
-
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return res.status(400).json({ error: "Ссылка должна начинаться с http:// или https://" });
-    }
-
-    const response = await fetch(parsedUrl.toString(), {
-      headers: {
-        "User-Agent": "ContentFactoryBot/1.0 (+https://cf-kubik.twc1.net)"
-      },
-      signal: AbortSignal.timeout(15000)
-    });
-
-    if (!response.ok) {
-      return res.status(400).json({ error: `Сайт не открылся: HTTP ${response.status}` });
-    }
-
-    const html = await response.text();
+    const importedPage = await fetchPublicHtml(rawUrl);
+    const html = importedPage.html;
     const pageText = cleanText(stripHtmlToText(html), 18000);
     if (pageText.length < 80) {
       return res.status(400).json({ error: "На странице мало текста для автозаполнения." });
@@ -1678,17 +1855,20 @@ app.post("/api/project/import-url", requireAuth, aiLimiter, async (req, res) => 
       max_tokens: 3000,
       messages: [
         { role: "system", content: "Ты маркетолог-аналитик. Извлекаешь коммерческие факты с сайта и возвращаешь только валидный JSON." },
-        { role: "user", content: projectFieldsPrompt(pageText, parsedUrl.toString()) }
+        { role: "user", content: projectFieldsPrompt(pageText, importedPage.url) }
       ]
     });
 
     const raw = result.completion.choices?.[0]?.message?.content || "";
     const patch = normalizeProjectPatch(extractJson(raw));
-    patch.landingPage = parsedUrl.toString();
+    patch.landingPage = importedPage.url;
     res.json({ ok: true, project: patch });
   } catch (error) {
-    console.error("project import url error:", error);
-    res.status(500).json({ error: cleanText(error.message || "Не удалось разобрать сайт", 500) });
+    const message = cleanText(error.message || "Не удалось разобрать сайт", 500);
+    const isClientError = /ссылк|адрес|локальн|служебн|HTML|страниц|сайт не открылся|перенаправлен|слишком большая/i.test(message);
+    if (isClientError) debugLog("project import url rejected:", message);
+    else console.error("project import url error:", error);
+    res.status(isClientError ? 400 : 500).json({ error: message });
   }
 });
 
@@ -1760,27 +1940,21 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
     let jsonSchema = "";
 
     if (platform === "dzen") {
-      platformRequirements = "- dzen.body: готовая, полноценная и глубокая SEO-оптимизированная статья/пост для Яндекс.Дзена на 4-7 абзацев с разметкой абзацев, подзаголовков (## заголовок) и списков. Должна содержать: сильный вовлекающий SEO-заголовок (в поле headline), цепляющее вступление, полезную информацию, раскрывающую ценность продукта/услуги, конкретные факты/доказательства и явный продающий CTA для оставления заявки.";
+      platformRequirements = "- dzen.body: готовая полезная статья для Дзена с понятным заголовком, коротким введением, разделами второго уровня (## Заголовок), списками там, где они помогают чтению, фактами только из базы проекта, выводом и безопасным следующим шагом. Не называй текст постом. Не подставляй вымышленные цены, сроки, гарантии, кейсы и цифры вместо отсутствующих данных.";
       jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"dzen":{"format":"SEO-статья","headline":"","body":"","tags":""}}}]}';
     } else if (platform === "telegram") {
       platformRequirements = "- telegram.body: готовый, вовлекающий информационный пост для Telegram-канала на 3-5 абзацев с разметкой абзацев и списков. Должен быть живым, раскрывать внутреннюю кухню проекта, показывать, 'как все выглядит', или давать лаконичный анонс полезной статьи в Дзене. Должен содержать призыв к действию.";
       jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"telegram":{"format":"Инфо-пост","headline":"","body":"","tags":""}}}]}';
     } else {
       platformRequirements = [
-        "- dzen.body: глубокая SEO-оптимизированная статья для Яндекс.Дзена на 4-7 абзацев с разметкой абзацев, H2/H3 подзаголовков (## заголовок) и списков, полезной информацией и CTA для оставления заявки.",
+        "- dzen.body: полезная статья для Дзена с разделами, списками, фактами из базы проекта и безопасным следующим шагом.",
         "- telegram.body: живой информационный пост для Telegram-канала на 3-5 абзацев с разметкой, рассказывающий о процессах компании или анонсирующий Дзен-статью."
       ].join("\n");
       jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"dzen":{"format":"SEO-статья","headline":"","body":"","tags":""},"telegram":{"format":"Инфо-пост","headline":"","body":"","tags":""}}}]}';
     }
 
-    // Специфика шаблона: для РСЯ и FAQ заставляем ИИ выдать тело в формате,
-    // который понимают соответствующие визуализаторы на фронте. Без этого шаблоны
-    // rsy-banner/faq-objection (platform "telegram") получили бы обычный пост, и
-    // parseRsyScript/parseFaqScript не нашли бы ничего → визуализатор пустой.
-    if (templateId === "rsy-banner") {
-      platformRequirements = "- telegram.body: верни пакет объявлений для РСЯ строго строками внутри поля body, по такому шаблону на каждый вариант (3–5 вариантов):\nЗаголовок 1: ...\nТекст 1: ...\nКонцепция: ...\nCTA: ...\nПовтори блок для вариантов 2, 3 и т.д.";
-    } else if (templateId === "faq-objection") {
-      platformRequirements = "- telegram.body: верни FAQ для снятия возражений строго строками внутри поля body, по такому шаблону на каждую пару (4–6 пар):\nВопрос 1: ...\nОтвет: ...\nПовтори блок для вопросов 2, 3 и т.д.";
+    if (templateId === "faq-objection" && platform === "dzen") {
+      platformRequirements = "- dzen.body: статья для Дзена в формате FAQ. После короткого введения дай 4–6 разделов вида «## Вопрос клиента» и подробный ответ под каждым. Каждый ответ опирается только на данные базы проекта; отсутствующие цены, гарантии, сроки и факты не выдумывай. Заверши выводом и безопасным следующим шагом.";
     }
 
     const systemPrompt = [
@@ -1789,9 +1963,9 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
       "Пиши емко, конкретно, без воды, без англицизмов, без длинного тире.",
       "Не придумывай несуществующие факты. Если факта нет, используй аккуратную формулировку без цифр.",
       "Верни строго один JSON-объект. Без markdown. Без пояснений. Без вопросов пользователю.",
-      "Если данных мало, используй разумные допущения и заполни поля нейтрально.",
+      "Если данных мало, не маскируй пробелы вымышленными фактами: дай полезную структуру и нейтральные объяснения только в пределах известного.",
       "Тебе КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать любые вводные или пояснительные слова, задавать вопросы пользователю или просить уточнения.",
-      "Если информации в брифе мало или он полностью пустой, сгенерируй идеи на основе названия проекта или на свое усмотрение для этой тематики, но обязательно верни строго валидный JSON по указанной схеме."
+      "Если информации в брифе мало или он полностью пустой, предложи темы на основе названия проекта без неподтвержденных характеристик и обязательно верни строго валидный JSON по указанной схеме."
     ].join(" ");
 
     const dbFields = [
@@ -1852,7 +2026,7 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
       "- angle и pillar: коротко.",
       platformRequirements,
       "- Каждый формат должен быть самостоятельным, а не копией одного текста.",
-      "- Учитывай площадку: Telegram читают (поэтому пиши развернуто и интересно), Reels и Shorts смотрят без долгого вступления.",
+      "- Учитывай выбранную площадку и не добавляй форматы других площадок.",
       "- Не используй слова: уникальный, профессиональный, качественный, надежный, индивидуальный подход.",
       "- Не используй символ длинного тире.",
       "",
@@ -1913,7 +2087,7 @@ Your task is to review the generated content package and evaluate it with extrem
    - "ctaScore": Actionability and strength of the call to action, integrating the landing page and lead magnet.
    - "platformScore": Adherence to platform rhythm and requirements (e.g. reels visual pacing, telegram paragraph pacing, RSY length limit).
 2. Critique: Write a highly constructive, brief marketing critique in Russian (what works, what is weak, why).
-3. Polish: Rewrite and polish any parts of the package to eliminate fluff, substitute clichés with specific numbers, warranties, or facts from the project profile, and maximize conversion rate.
+3. Polish: Rewrite and polish any parts of the package to eliminate fluff and use only numbers, warranties, or facts explicitly present in the project profile. Never invent proof to increase the score.
 Output the polished JSON package in the EXACT SAME schema but add a top-level "critic" object:
 "critic": {
   "hookScore": 92,
@@ -2118,20 +2292,79 @@ app.post("/api/upload", requireAuth, publishLimiter, (req, res, next) => {
     fs.renameSync(oldPath, newPath);
 
     const publicUrl = `${baseUrlFromRequest(req)}/uploads/${encodeURIComponent(safeName)}`;
-
-    res.json({
-      ok: true,
+    const mediaItem = {
       id: safeName,
       name: req.file.originalname,
       type: req.file.mimetype,
       size: req.file.size,
       url: publicUrl
+    };
+
+    const user = req.store.users.find((item) => item.id === req.workspaceUser.id);
+    if (!user) {
+      fs.unlinkSync(newPath);
+      return res.status(401).json({ error: "Аккаунт не найден. Войди заново." });
+    }
+
+    const workspace = sanitizeWorkspace(user.workspace || {});
+    workspace.media = [mediaItem, ...workspace.media.filter((item) => item.id !== safeName)].slice(0, 300);
+    user.workspace = workspace;
+    user.updatedAt = new Date().toISOString();
+    saveStore(req.store);
+
+    res.json({
+      ok: true,
+      ...mediaItem
     });
   } catch (error) {
     console.error("upload error:", error);
     res.status(500).json({
       error: error.message || "Ошибка загрузки файла"
     });
+  }
+});
+
+app.delete("/api/media/:id", requireAuth, publishLimiter, (req, res) => {
+  try {
+    const fileId = path.basename(String(req.params.id || ""));
+    if (!fileId || fileId !== String(req.params.id || "")) {
+      return res.status(400).json({ error: "Некорректный идентификатор файла." });
+    }
+
+    const user = req.store.users.find((item) => item.id === req.workspaceUser.id);
+    if (!user) {
+      return res.status(401).json({ error: "Аккаунт не найден. Войди заново." });
+    }
+
+    const workspace = sanitizeWorkspace(user.workspace || {});
+    const mediaExists = workspace.media.some((item) => item.id === fileId);
+    if (!mediaExists) {
+      return res.status(404).json({ error: "Медиафайл не найден в рабочем пространстве." });
+    }
+
+    const filePath = path.resolve(uploadsDir, fileId);
+    const uploadsRoot = path.resolve(uploadsDir) + path.sep;
+    if (!filePath.startsWith(uploadsRoot)) {
+      return res.status(400).json({ error: "Некорректный путь к файлу." });
+    }
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    workspace.media = workspace.media.filter((item) => item.id !== fileId);
+    workspace.queue = workspace.queue.map((item) => item.mediaId === fileId
+      ? { ...item, mediaId: "", mediaUrl: "", mediaType: "" }
+      : item);
+    user.workspace = workspace;
+    user.queue = workspace.queue;
+    user.updatedAt = new Date().toISOString();
+    saveStore(req.store);
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("media delete error:", error);
+    res.status(500).json({ error: "Не удалось удалить медиафайл." });
   }
 });
 
@@ -2142,10 +2375,10 @@ async function enhancePromptWithAi(userPrompt) {
   }
   try {
     const systemPrompt = `You are a professional prompt engineer for AI image generators (such as Midjourney, Stable Diffusion, Pollinations).
-Your task is to take the input text (which can be a short Russian image description, a post headline, or a visual scenic brief) and generate a highly detailed, professional, photography-centric prompt in English or Russian that perfectly illustrates the subject.
+Your task is to take the input text (which can be a short Russian image description, a post headline, or a visual scenic brief) and generate a detailed, photography-centric prompt in English or Russian that illustrates only the facts and subject present in the source.
 Ты не задаёшь уточняющие вопросы. Если входной текст похож на статью, сам извлеки из него визуальную сцену. Верни только финальный промпт для генерации. Без markdown, без списков, без объяснений, без вводных фраз.
-Vividly describe the style (e.g., professional commercial photography, cinematic lighting, 8k, highly detailed, realistic, award-winning composition), subject, details, lighting, and camera settings.
-Do not include any conversational prefix, introductory chat, explanation, questions, or markdown formatting. Output ONLY the final prompt string. Do not ask questions under any circumstances. If details are missing, imagine them visually.`;
+Describe the subject, setting, action, lighting and composition. Do not invent brands, documents, product features, numbers, guarantees or visible text that are absent from the source.
+Do not include any conversational prefix, introductory chat, explanation, questions, or markdown formatting. Output ONLY the final prompt string. Do not ask questions under any circumstances.`;
 
     const requestPayload = {
       messages: [
@@ -2639,11 +2872,19 @@ async function runScheduledPublishing() {
 
       for (const post of queue) {
         if (!post.status) post.status = post.state === "Опубликовано" ? "published" : "scheduled";
+        const platform = post.platform || "dzen";
+
+        if (platform === "dzen" && post.status === "scheduled") {
+          post.status = "ready";
+          post.state = statusLabel(post.status);
+          changed = true;
+          continue;
+        }
+
         if (post.status !== "scheduled" || !post.scheduledAt) continue;
         const postTime = new Date(post.scheduledAt);
         if (postTime > now) continue; // Not yet time
 
-        const platform = post.platform || "telegram";
         const userSettings = getUserSettingsForServer(user);
 
         try {
@@ -2685,6 +2926,12 @@ async function runScheduledPublishing() {
               media: { body: fs.createReadStream(localPath) }
             });
             post.status = "published"; post.state = statusLabel(post.status); post.publishedAt = new Date().toISOString();
+          } else {
+            post.status = "error";
+            post.state = statusLabel(post.status);
+            post.lastError = `Автопубликация для платформы "${platform}" не поддерживается`;
+            changed = true;
+            continue;
           }
 
           changed = true;

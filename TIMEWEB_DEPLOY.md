@@ -7,6 +7,8 @@
 Для работы приложения необходимы следующие файлы:
 ```text
 index.html
+style.css
+script.js
 server.js
 package.json
 .env.example
@@ -32,6 +34,7 @@ API.md
 ```env
 APP_SECRET=случайная-строка-для-сессий
 PUBLIC_BASE_URL=https://ваш-домен-в-timeweb.ru
+CORS_ORIGIN=https://ваш-домен-в-timeweb.ru
 MAX_UPLOAD_MB=200
 AI_TIMEOUT_MS=180000
 AI_MAX_TOKENS=8000
@@ -48,7 +51,7 @@ TIMEWEB_AGENT_ID=id-вашего-созданного-агента
 
 После развертывания откройте в браузере адрес:
 ```text
-https://ваш-домен-в-timeweb.ru/api/health
+https://ваш-домен-в-timeweb.ru/api/health?json=true
 ```
 
 При правильной настройке вы получите JSON-ответ вида:
