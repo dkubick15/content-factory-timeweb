@@ -13,7 +13,6 @@ import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
-import { Agent as UndiciAgent } from "undici";
 
 // Timeweb-контейнер может получать IPv6-адрес Telegram API без рабочего
 // IPv6-маршрута. Предпочитаем IPv4, чтобы публикация не падала с fetch failed.
@@ -42,23 +41,9 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-17-telegram-direct-ip-v17";
+const APP_BUILD = "2026-07-17-telegram-direct-https-v18";
 
 const TELEGRAM_API_IPV4 = process.env.TELEGRAM_API_IPV4 || "149.154.166.110";
-const telegramDispatcher = new UndiciAgent({
-  connect: {
-    family: 4,
-    timeout: 20000,
-    servername: "api.telegram.org",
-    lookup: (_hostname, options, callback) => {
-      if (options?.all) {
-        callback(null, [{ address: TELEGRAM_API_IPV4, family: 4 }]);
-        return;
-      }
-      callback(null, TELEGRAM_API_IPV4, 4);
-    }
-  }
-});
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -2510,52 +2495,103 @@ app.post("/api/generate-image", requireAuth, aiLimiter, enforceGenerationLimit, 
   }
 });
 
-async function telegramCallMultipart(method, caption, filePath, botToken, chatId) {
-  const url = `https://api.telegram.org/bot${botToken}/${method}`;
-  const form = new FormData();
+function parseTelegramResponse(response, resolve, reject) {
+  const chunks = [];
+  let total = 0;
+  const maxBytes = 2 * 1024 * 1024;
 
-  form.append("chat_id", chatId);
-  form.append("caption", caption.slice(0, 1024));
-
-  if (filePath && fs.existsSync(filePath)) {
-    let blob;
-    // Оптимизированный стриминг файла с диска для экономии RAM на больших видеофайлах
-    if (typeof fs.openAsBlob === "function") {
-      blob = await fs.openAsBlob(filePath);
-    } else {
-      const buffer = fs.readFileSync(filePath);
-      blob = new Blob([buffer]);
+  response.on("data", (chunk) => {
+    total += chunk.length;
+    if (total > maxBytes) {
+      response.destroy(new Error("Ответ Telegram слишком большой."));
+      return;
     }
-    const fieldName = method === "sendPhoto" ? "photo" : "video";
-    form.append(fieldName, blob, path.basename(filePath));
-  }
-
-  const response = await fetch(url, {
-    method: "POST",
-    body: form,
-    dispatcher: telegramDispatcher
+    chunks.push(chunk);
   });
 
-  const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data.description || "Telegram API error");
+  response.on("end", () => {
+    try {
+      const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (response.statusCode < 200 || response.statusCode >= 300 || !data.ok) {
+        reject(new Error(data.description || `Telegram API: HTTP ${response.statusCode}`));
+        return;
+      }
+      resolve(data);
+    } catch (error) {
+      reject(new Error(`Некорректный ответ Telegram: ${error.message}`));
+    }
+  });
+  response.on("error", reject);
+}
+
+function createTelegramRequest(method, botToken, headers, resolve, reject) {
+  const request = https.request({
+    hostname: TELEGRAM_API_IPV4,
+    port: 443,
+    servername: "api.telegram.org",
+    method: "POST",
+    path: `/bot${botToken}/${method}`,
+    headers: {
+      Host: "api.telegram.org",
+      ...headers
+    },
+    timeout: 30000
+  }, (response) => parseTelegramResponse(response, resolve, reject));
+
+  request.on("timeout", () => {
+    request.destroy(new Error("Telegram не ответил за 30 секунд."));
+  });
+  request.on("error", reject);
+  return request;
+}
+
+async function telegramCallMultipart(method, caption, filePath, botToken, chatId) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    throw new Error("Медиафайл для Telegram не найден.");
   }
-  return data;
+
+  const boundary = `----ContentFactory${crypto.randomBytes(12).toString("hex")}`;
+  const fieldName = method === "sendPhoto" ? "photo" : "video";
+  const fileName = path.basename(filePath).replace(/["\r\n]/g, "_");
+  const mimeType = method === "sendPhoto" ? "image/jpeg" : "video/mp4";
+  const fileSize = fs.statSync(filePath).size;
+  const field = (name, value) => Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+    "utf8"
+  );
+  const preamble = Buffer.concat([
+    field("chat_id", chatId),
+    field("caption", caption.slice(0, 1024)),
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\nContent-Type: ${mimeType}\r\n\r\n`,
+      "utf8"
+    )
+  ]);
+  const closing = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
+
+  return new Promise((resolve, reject) => {
+    const request = createTelegramRequest(method, botToken, {
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      "Content-Length": preamble.length + fileSize + closing.length
+    }, resolve, reject);
+
+    request.write(preamble);
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", (error) => request.destroy(error));
+    stream.on("end", () => request.end(closing));
+    stream.pipe(request, { end: false });
+  });
 }
 
 async function telegramCall(method, payload, botToken) {
-  const url = `https://api.telegram.org/bot${botToken}/${method}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    dispatcher: telegramDispatcher
+  const body = Buffer.from(JSON.stringify(payload), "utf8");
+  return new Promise((resolve, reject) => {
+    const request = createTelegramRequest(method, botToken, {
+      "Content-Type": "application/json",
+      "Content-Length": body.length
+    }, resolve, reject);
+    request.end(body);
   });
-  const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data.description || "Telegram API error");
-  }
-  return data;
 }
 
 app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) => {
