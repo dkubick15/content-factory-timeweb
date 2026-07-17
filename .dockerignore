@@ -3,7 +3,6 @@ npm-debug.log*
 .DS_Store
 .env
 .env.*
-timeweb-env-ready.env
 uploads/*
 !uploads/.gitkeep
 data/*

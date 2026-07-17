@@ -37,7 +37,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-17-timeweb-agent-restored-v13";
+const APP_BUILD = "2026-07-17-timeweb-agent-restored-v14";
 
 function extractJwt(value) {
   const text = String(value || "").trim();
