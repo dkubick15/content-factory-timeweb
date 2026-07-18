@@ -1469,7 +1469,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="row">
           <div>
             <h1 class="title-xl">Telegram: очередь и публикация</h1>
-            <p class="text mt-8">Публикуй сразу или назначай дату и время. Автопроверка очереди выполняется каждые 5 минут.</p>
+            <p class="text mt-8">Публикуй сразу или назначай дату и время. Сервер проверяет очередь каждую минуту.</p>
           </div>
           <button class="btn danger" data-action="clear-queue">Очистить всю очередь</button>
         </div>
@@ -1615,7 +1615,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <label class="field"><span class="label">Chat ID</span><input class="input" data-action="setting-input" name="telegramChatId" value="${escapeHtml(s.telegramChatId)}" /></label>
             <div class="metric p-12">
               <div class="metric-label">Публикация по расписанию</div>
-              <div class="metric-value fs-16">${s.telegramReady ? "Готова · проверка каждые 5 минут" : "Сначала сохрани Bot Token и Chat ID"}</div>
+              <div class="metric-value fs-16">${s.telegramSchedulerReady ? "Готова · проверка каждую минуту" : "Сначала сохрани Bot Token и Chat ID"}</div>
             </div>
             <button class="btn primary" data-action="save-server-config">Сохранить</button>
           </div>
@@ -2029,48 +2029,13 @@ document.addEventListener("DOMContentLoaded", () => {
     await publishOne(post.id);
   }
 
-  async function publishTelegramFromBrowser(post, media) {
-    const config = await request("/api/telegram/browser-config", { method: "POST" });
-    const text = validateTelegramPost(post, media);
-    const isImage = Boolean(media?.type?.startsWith("image/"));
-    const method = media?.url ? (isImage ? "sendPhoto" : "sendVideo") : "sendMessage";
-    const payload = media?.url
-      ? {
-          chat_id: config.chatId,
-          [isImage ? "photo" : "video"]: new URL(media.url, window.location.origin).href,
-          caption: text
-        }
-      : {
-          chat_id: config.chatId,
-          text
-        };
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
-    let response;
-
-    try {
-      response = await fetch(`https://api.telegram.org/bot${config.botToken}/${method}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-        cache: "no-store"
-      });
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        throw new Error("Telegram не ответил за 30 секунд.");
-      }
-      throw new Error("Браузер не смог подключиться к Telegram.");
-    } finally {
-      clearTimeout(timer);
-    }
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) {
-      throw new Error(data.description || "Telegram отклонил публикацию.");
-    }
-    return data;
+  async function publishTelegramFromApp(post, media) {
+    validateTelegramPost(post, media);
+    const result = await request("/api/publish/telegram", {
+      method: "POST",
+      body: { post, media }
+    });
+    return result.telegram;
   }
 
   async function publishOne(id) {
@@ -2086,7 +2051,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const media = state.media.find((m) => m.id === post.mediaId);
       const mediaPayload = media ? { url: media.url, type: media.type } : null;
-      const result = await publishTelegramFromBrowser(post, mediaPayload);
+      const result = await publishTelegramFromApp(post, mediaPayload);
       post.status = "published";
       post.state = "Опубликовано";
       post.publishedAt = new Date().toISOString();

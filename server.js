@@ -41,14 +41,11 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-18-telegram-first-scheduler-v20";
-
-const TELEGRAM_API_IPV4 = process.env.TELEGRAM_API_IPV4 || "149.154.166.110";
-const GITHUB_SCHEDULER_REPOSITORY = process.env.GITHUB_SCHEDULER_REPOSITORY || "dkubick15/content-factory-timeweb";
-const GITHUB_SCHEDULER_WORKFLOW = `${GITHUB_SCHEDULER_REPOSITORY}/.github/workflows/telegram-scheduler.yml@refs/heads/main`;
-const GITHUB_OIDC_AUDIENCE = process.env.GITHUB_OIDC_AUDIENCE || "content-factory-telegram-scheduler";
-const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
-const GITHUB_OIDC_JWKS_URL = process.env.GITHUB_OIDC_JWKS_URL || "https://token.actions.githubusercontent.com/.well-known/jwks";
+const APP_BUILD = "2026-07-18-telegram-first-relay-v21";
+const TELEGRAM_RELAY_URL = (
+  process.env.TELEGRAM_RELAY_URL
+  || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
+).replace(/\/+$/, "");
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -91,6 +88,11 @@ const PORT = safeNumber(process.env.PORT, 8080);
 
 const DEFAULT_AI_MODEL = process.env.DEFAULT_MODEL || process.env.DEFAULT_AI_MODEL || "timeweb-agent";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+const SCHEDULER_BASE_URL = (
+  process.env.SCHEDULER_BASE_URL
+  || PUBLIC_BASE_URL
+  || "https://cf-kubik.twc1.net"
+).replace(/\/+$/, "");
 const MAX_UPLOAD_MB = safeNumber(process.env.MAX_UPLOAD_MB, 200);
 const AI_TIMEOUT_MS = safeNumber(process.env.AI_TIMEOUT_MS, 300000);
 const AI_MAX_TOKENS = safeNumber(process.env.AI_MAX_TOKENS, 8000);
@@ -111,6 +113,7 @@ const AI_RATE_LIMIT_WINDOW_MS = safeNumber(process.env.AI_RATE_LIMIT_WINDOW_MS, 
 const AI_RATE_LIMIT_MAX = safeNumber(process.env.AI_RATE_LIMIT_MAX, 60);
 const PUBLISH_RATE_LIMIT_WINDOW_MS = safeNumber(process.env.PUBLISH_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
 const PUBLISH_RATE_LIMIT_MAX = safeNumber(process.env.PUBLISH_RATE_LIMIT_MAX, 60);
+const SCHEDULER_INTERVAL_MS = Math.max(1000, safeNumber(process.env.SCHEDULER_INTERVAL_MS, 60 * 1000));
 
 // YouTube OAuth2 config (Google Cloud Console)
 const YOUTUBE_CLIENT_ID = process.env.YOUTUBE_CLIENT_ID || "";
@@ -197,7 +200,7 @@ app.use(helmet({
       styleSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       mediaSrc: ["'self'", "blob:", "https:"],
-      connectSrc: ["'self'", "https://api.telegram.org"],
+      connectSrc: ["'self'"],
       fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
@@ -569,6 +572,7 @@ function validateConfigBody(body = {}) {
   const allowed = {
     telegramBotToken: 120,
     telegramChatId: 160,
+    telegramRelayToken: 300,
     instagramAccessToken: 600,
     instagramUserId: 160
   };
@@ -668,6 +672,7 @@ function defaultUserSettings() {
     model: DEFAULT_AI_MODEL,
     telegramBotTokenEnc: "",
     telegramChatId: "",
+    telegramRelayTokenEnc: "",
     // Instagram Graph API
     instagramAccessTokenEnc: "",
     instagramUserId: "",
@@ -692,6 +697,7 @@ function getUserSettingsForServer(user) {
     model: settings.model || DEFAULT_AI_MODEL,
     telegramBotToken: decryptSecret(settings.telegramBotTokenEnc) || process.env.TELEGRAM_BOT_TOKEN || "",
     telegramChatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID || "",
+    telegramRelayToken: decryptSecret(settings.telegramRelayTokenEnc) || process.env.TELEGRAM_RELAY_SIWC_TOKEN || "",
     instagramAccessToken: decryptSecret(settings.instagramAccessTokenEnc) || "",
     instagramUserId: settings.instagramUserId || "",
     youtubeRefreshToken: decryptSecret(settings.youtubeRefreshTokenEnc) || "",
@@ -713,6 +719,7 @@ function getUserSettingsForClient(user) {
     model: serverSettings.model,
     telegramBotToken: maskKey(serverSettings.telegramBotToken),
     telegramChatId: serverSettings.telegramChatId,
+    telegramRelayReady: Boolean(serverSettings.telegramRelayToken),
     instagramAccessToken: maskKey(serverSettings.instagramAccessToken),
     instagramUserId: serverSettings.instagramUserId,
     instagramReady: Boolean(serverSettings.instagramAccessToken && serverSettings.instagramUserId),
@@ -946,98 +953,6 @@ function requireAuth(req, res, next) {
   }
 
   next();
-}
-
-let githubOidcJwksCache = {
-  expiresAt: 0,
-  keys: []
-};
-
-function decodeJwtJson(value) {
-  return JSON.parse(Buffer.from(String(value || ""), "base64url").toString("utf8"));
-}
-
-async function getGithubOidcKeys(forceRefresh = false) {
-  if (!forceRefresh && githubOidcJwksCache.expiresAt > Date.now() && githubOidcJwksCache.keys.length) {
-    return githubOidcJwksCache.keys;
-  }
-
-  const response = await withTimeout(
-    fetch(GITHUB_OIDC_JWKS_URL, {
-      headers: { Accept: "application/json" }
-    }),
-    15000,
-    "GitHub OIDC"
-  );
-  if (!response.ok) {
-    throw new Error(`GitHub OIDC JWKS недоступен (${response.status})`);
-  }
-
-  const data = await response.json();
-  const keys = Array.isArray(data?.keys) ? data.keys : [];
-  if (!keys.length) throw new Error("GitHub OIDC не вернул ключи подписи");
-
-  githubOidcJwksCache = {
-    expiresAt: Date.now() + 6 * 60 * 60 * 1000,
-    keys
-  };
-  return keys;
-}
-
-async function verifyGithubSchedulerToken(token) {
-  const parts = String(token || "").split(".");
-  if (parts.length !== 3) throw new Error("Некорректный GitHub OIDC token");
-
-  const [headerPart, payloadPart, signaturePart] = parts;
-  const header = decodeJwtJson(headerPart);
-  const payload = decodeJwtJson(payloadPart);
-  if (header.alg !== "RS256" || !header.kid) {
-    throw new Error("Неподдерживаемая подпись GitHub OIDC");
-  }
-
-  let keys = await getGithubOidcKeys();
-  let jwk = keys.find((item) => item.kid === header.kid);
-  if (!jwk) {
-    keys = await getGithubOidcKeys(true);
-    jwk = keys.find((item) => item.kid === header.kid);
-  }
-  if (!jwk) throw new Error("Ключ GitHub OIDC не найден");
-
-  const publicKey = crypto.createPublicKey({ key: jwk, format: "jwk" });
-  const isValid = crypto.verify(
-    "RSA-SHA256",
-    Buffer.from(`${headerPart}.${payloadPart}`),
-    publicKey,
-    Buffer.from(signaturePart, "base64url")
-  );
-  if (!isValid) throw new Error("Подпись GitHub OIDC не прошла проверку");
-
-  const now = Math.floor(Date.now() / 1000);
-  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-  const allowedEvents = new Set(["schedule", "workflow_dispatch"]);
-  if (payload.iss !== GITHUB_OIDC_ISSUER) throw new Error("Некорректный GitHub OIDC issuer");
-  if (!audiences.includes(GITHUB_OIDC_AUDIENCE)) throw new Error("Некорректный GitHub OIDC audience");
-  if (!payload.exp || payload.exp < now - 30) throw new Error("GitHub OIDC token истёк");
-  if (payload.nbf && payload.nbf > now + 30) throw new Error("GitHub OIDC token ещё не действует");
-  if (payload.repository !== GITHUB_SCHEDULER_REPOSITORY) throw new Error("Репозиторий планировщика не разрешён");
-  if (payload.ref !== "refs/heads/main") throw new Error("Планировщик запущен не из main");
-  if (payload.workflow_ref !== GITHUB_SCHEDULER_WORKFLOW) throw new Error("Workflow планировщика не разрешён");
-  if (!allowedEvents.has(payload.event_name)) throw new Error("Событие планировщика не разрешено");
-
-  return payload;
-}
-
-async function requireGithubScheduler(req, res, next) {
-  try {
-    const header = req.headers.authorization || "";
-    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-    if (!token) return res.status(401).json({ error: "Нет GitHub OIDC token" });
-    req.githubScheduler = await verifyGithubSchedulerToken(token);
-    next();
-  } catch (error) {
-    console.error("[Scheduler OIDC]", error.message);
-    res.status(401).json({ error: "Планировщик не авторизован" });
-  }
 }
 
 function enforceGenerationLimit(req, res, next) {
@@ -1730,14 +1645,19 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
 
 app.get("/api/config", requireAuth, (req, res) => {
   const settings = getUserSettingsForClient(req.workspaceUser);
+  const telegramSchedulerReady = Boolean(
+    settings.telegramBotToken
+    && settings.telegramChatId
+    && settings.telegramRelayReady
+  );
 
   res.json({
     ok: true,
     user: getPublicUser(req.user),
     openaiReady: Boolean(settings.openaiApiKey),
     telegramReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
-    telegramSchedulerReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
-    telegramSchedulerIntervalMinutes: 5,
+    telegramSchedulerReady,
+    telegramSchedulerIntervalMinutes: 1,
     instagramReady: settings.instagramReady,
     youtubeConnected: settings.youtubeConnected,
     youtubeOAuthEnabled: settings.youtubeOAuthEnabled,
@@ -1817,7 +1737,13 @@ app.post("/api/queue", requireAuth, (req, res) => {
 });
 
 app.post("/api/config", requireAuth, (req, res) => {
-  const { telegramBotToken, telegramChatId, instagramAccessToken, instagramUserId } = validateConfigBody(req.body || {});
+  const {
+    telegramBotToken,
+    telegramChatId,
+    telegramRelayToken,
+    instagramAccessToken,
+    instagramUserId
+  } = validateConfigBody(req.body || {});
 
   try {
     const user = req.store.users.find((item) => item.id === req.workspaceUser.id);
@@ -1837,6 +1763,14 @@ app.post("/api/config", requireAuth, (req, res) => {
       user.settings.telegramChatId = String(telegramChatId || "").trim();
     }
 
+    if (telegramRelayToken !== undefined) {
+      const trimmed = String(telegramRelayToken).trim();
+      const isMasked = trimmed.includes("...") || trimmed.includes("***");
+      if (!(isMasked && user.settings.telegramRelayTokenEnc)) {
+        user.settings.telegramRelayTokenEnc = encryptSecret(trimmed);
+      }
+    }
+
     if (instagramAccessToken !== undefined) {
       const trimmed = String(instagramAccessToken).trim();
       const isMasked = trimmed.includes("...") || trimmed.includes("***");
@@ -1853,13 +1787,18 @@ app.post("/api/config", requireAuth, (req, res) => {
     saveStore(req.store);
 
     const settings = getUserSettingsForClient(user);
+    const telegramSchedulerReady = Boolean(
+      settings.telegramBotToken
+      && settings.telegramChatId
+      && settings.telegramRelayReady
+    );
     res.json({
       ok: true,
       user: getPublicUser(req.user),
       openaiReady: Boolean(settings.openaiApiKey),
       telegramReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
-      telegramSchedulerReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
-      telegramSchedulerIntervalMinutes: 5,
+      telegramSchedulerReady,
+      telegramSchedulerIntervalMinutes: 1,
       instagramReady: settings.instagramReady,
       youtubeConnected: settings.youtubeConnected,
       youtubeOAuthEnabled: settings.youtubeOAuthEnabled,
@@ -2596,103 +2535,51 @@ app.post("/api/generate-image", requireAuth, aiLimiter, enforceGenerationLimit, 
   }
 });
 
-function parseTelegramResponse(response, resolve, reject) {
-  const chunks = [];
-  let total = 0;
-  const maxBytes = 2 * 1024 * 1024;
-
-  response.on("data", (chunk) => {
-    total += chunk.length;
-    if (total > maxBytes) {
-      response.destroy(new Error("Ответ Telegram слишком большой."));
-      return;
-    }
-    chunks.push(chunk);
-  });
-
-  response.on("end", () => {
-    try {
-      const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      if (response.statusCode < 200 || response.statusCode >= 300 || !data.ok) {
-        reject(new Error(data.description || `Telegram API: HTTP ${response.statusCode}`));
-        return;
-      }
-      resolve(data);
-    } catch (error) {
-      reject(new Error(`Некорректный ответ Telegram: ${error.message}`));
-    }
-  });
-  response.on("error", reject);
+function buildTelegramText(post) {
+  return [post?.title, "", post?.body, "", post?.tags]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
 }
 
-function createTelegramRequest(method, botToken, headers, resolve, reject) {
-  const request = https.request({
-    hostname: TELEGRAM_API_IPV4,
-    port: 443,
-    servername: "api.telegram.org",
-    method: "POST",
-    path: `/bot${botToken}/${method}`,
-    headers: {
-      Host: "api.telegram.org",
-      ...headers
-    },
-    timeout: 30000
-  }, (response) => parseTelegramResponse(response, resolve, reject));
-
-  request.on("timeout", () => {
-    request.destroy(new Error("Telegram не ответил за 30 секунд."));
-  });
-  request.on("error", reject);
-  return request;
-}
-
-async function telegramCallMultipart(method, caption, filePath, botToken, chatId) {
-  if (!filePath || !fs.existsSync(filePath)) {
-    throw new Error("Медиафайл для Telegram не найден.");
+function validateTelegramPayload(text, mediaUrl = "") {
+  const limit = mediaUrl ? 1024 : 4096;
+  if (!text) throw new Error("Пустой текст публикации.");
+  if (text.length > limit) {
+    throw new Error(`Текст длиннее лимита Telegram: ${text.length} из ${limit} знаков.`);
   }
-
-  const boundary = `----ContentFactory${crypto.randomBytes(12).toString("hex")}`;
-  const fieldName = method === "sendPhoto" ? "photo" : "video";
-  const fileName = path.basename(filePath).replace(/["\r\n]/g, "_");
-  const mimeType = method === "sendPhoto" ? "image/jpeg" : "video/mp4";
-  const fileSize = fs.statSync(filePath).size;
-  const field = (name, value) => Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
-    "utf8"
-  );
-  const preamble = Buffer.concat([
-    field("chat_id", chatId),
-    field("caption", caption.slice(0, 1024)),
-    Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\nContent-Type: ${mimeType}\r\n\r\n`,
-      "utf8"
-    )
-  ]);
-  const closing = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
-
-  return new Promise((resolve, reject) => {
-    const request = createTelegramRequest(method, botToken, {
-      "Content-Type": `multipart/form-data; boundary=${boundary}`,
-      "Content-Length": preamble.length + fileSize + closing.length
-    }, resolve, reject);
-
-    request.write(preamble);
-    const stream = fs.createReadStream(filePath);
-    stream.on("error", (error) => request.destroy(error));
-    stream.on("end", () => request.end(closing));
-    stream.pipe(request, { end: false });
-  });
 }
 
-async function telegramCall(method, payload, botToken) {
-  const body = Buffer.from(JSON.stringify(payload), "utf8");
-  return new Promise((resolve, reject) => {
-    const request = createTelegramRequest(method, botToken, {
-      "Content-Type": "application/json",
-      "Content-Length": body.length
-    }, resolve, reject);
-    request.end(body);
-  });
+async function telegramRelayCall(payload, botToken, relayToken) {
+  if (!TELEGRAM_RELAY_URL) throw new Error("Telegram-ретранслятор не настроен.");
+  if (!botToken || !relayToken) throw new Error("Не настроена защищённая публикация Telegram.");
+
+  const body = JSON.stringify(payload);
+  const timestamp = Date.now().toString();
+  const signature = crypto
+    .createHmac("sha256", botToken)
+    .update(`${timestamp}.${body}`)
+    .digest("hex");
+
+  const response = await withTimeout(
+    fetch(`${TELEGRAM_RELAY_URL}/api/publish`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Relay-Timestamp": timestamp,
+        "X-Relay-Signature": signature,
+        "OAI-Sites-Authorization": `Bearer ${relayToken}`
+      },
+      body
+    }),
+    45000,
+    "Telegram"
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || `Telegram-ретранслятор: HTTP ${response.status}`);
+  }
+  return data;
 }
 
 app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) => {
@@ -2700,10 +2587,11 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
     const userSettings = getUserSettingsForServer(req.workspaceUser);
     const botToken = userSettings.telegramBotToken;
     const chatId = userSettings.telegramChatId;
+    const relayToken = userSettings.telegramRelayToken;
 
-    if (!botToken || !chatId) {
+    if (!botToken || !chatId || !relayToken) {
       return res.status(400).json({
-        error: "В настройках аккаунта не подключён Telegram Bot Token или Telegram Chat ID."
+        error: "Telegram настроен не полностью. Сохрани Bot Token, Chat ID и защищённый ретранслятор."
       });
     }
 
@@ -2714,69 +2602,53 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
       });
     }
 
-    const text = [post.title, "", post.body, "", post.tags]
-      .filter(Boolean)
-      .join("\n")
-      .slice(0, 4096);
+    const mediaUrl = absoluteMediaUrl(req, media?.url);
+    const text = buildTelegramText(post);
+    validateTelegramPayload(text, mediaUrl);
+    const result = await telegramRelayCall({
+      text,
+      mediaUrl,
+      mediaType: String(media?.type || "")
+    }, botToken, relayToken);
 
-    let result;
-
-    if (media?.url) {
-      const localPath = uploadPathFromUrl(media.url);
-      const method = media.type?.startsWith("image/") ? "sendPhoto" : "sendVideo";
-
-      if (fs.existsSync(localPath)) {
-        result = await telegramCallMultipart(method, text, localPath, botToken, chatId);
-      } else {
-        result = await telegramCall(method, {
-          chat_id: chatId,
-          [media.type?.startsWith("image/") ? "photo" : "video"]: media.url,
-          caption: text.slice(0, 1024)
-        }, botToken);
+    const storedUser = req.store.users.find((item) => item.id === req.workspaceUser.id);
+    if (storedUser && post.id) {
+      const queue = Array.isArray(storedUser.queue)
+        ? storedUser.queue
+        : Array.isArray(storedUser.workspace?.queue)
+          ? storedUser.workspace.queue
+          : [];
+      const storedPost = queue.find((item) => String(item.id) === String(post.id));
+      if (storedPost) {
+        storedPost.status = "published";
+        storedPost.state = statusLabel(storedPost.status);
+        storedPost.publishedAt = new Date().toISOString();
+        storedPost.telegramMessageId = result.messageId || "";
+        storedPost.lastError = "";
+        storedPost.claimId = "";
+        storedPost.claimExpiresAt = 0;
+        storedPost.publishAttempts = Number(storedPost.publishAttempts || 0) + 1;
+        syncQueueToWorkspace(storedUser, queue);
+        saveStore(req.store);
       }
-    } else {
-      result = await telegramCall("sendMessage", {
-        chat_id: chatId,
-        text
-      }, botToken);
     }
 
     res.json({
       ok: true,
-      telegram: result
+      telegram: {
+        ok: true,
+        result: {
+          message_id: result.messageId,
+          chat: { id: result.chatId || chatId }
+        }
+      }
     });
   } catch (error) {
     console.error("telegram publish error:", error);
-    const cause = String(error?.cause?.message || "").trim();
     res.status(500).json({
-      error: cause
-        ? `Telegram недоступен с сервера: ${cause}`
-        : (error.message || "Ошибка публикации в Telegram")
+      error: error.message || "Ошибка публикации в Telegram"
     });
   }
-});
-
-app.post("/api/telegram/browser-config", requireAuth, publishLimiter, (req, res) => {
-  const userSettings = getUserSettingsForServer(req.workspaceUser);
-  const botToken = userSettings.telegramBotToken;
-  const chatId = userSettings.telegramChatId;
-
-  if (!botToken || !chatId) {
-    return res.status(400).json({
-      error: "В настройках аккаунта не подключён Telegram Bot Token или Telegram Chat ID."
-    });
-  }
-
-  // Timeweb может блокировать исходящие соединения к Telegram. Для личного
-  // приложения отдаём данные только авторизованному браузеру и не кешируем их:
-  // браузер отправит публикацию напрямую в официальный Telegram Bot API.
-  res.setHeader("Cache-Control", "no-store, max-age=0");
-  res.setHeader("Pragma", "no-cache");
-  res.json({
-    ok: true,
-    botToken,
-    chatId
-  });
 });
 
 function syncQueueToWorkspace(user, queue) {
@@ -2796,163 +2668,6 @@ function absoluteMediaUrl(req, value) {
     return "";
   }
 }
-
-app.post("/api/scheduler/telegram/claim", requireGithubScheduler, async (req, res) => {
-  try {
-    const store = loadStore();
-    const now = Date.now();
-    const limit = Math.max(1, Math.min(Number(req.body?.limit) || 10, 20));
-    const jobs = [];
-    let changed = false;
-
-    for (const user of store.users) {
-      if (jobs.length >= limit) break;
-      const queue = Array.isArray(user.queue)
-        ? user.queue
-        : Array.isArray(user.workspace?.queue)
-          ? user.workspace.queue
-          : [];
-      const userSettings = getUserSettingsForServer(user);
-
-      for (const post of queue) {
-        if (jobs.length >= limit) break;
-        if (post.platform === "dzen") {
-          post.contentFormat = "dzen";
-          post.platform = "telegram";
-          if (post.status === "ready") post.status = "scheduled";
-          changed = true;
-        }
-        if (post.platform !== "telegram") continue;
-
-        if (post.status === "publishing" && Number(post.claimExpiresAt || 0) <= now) {
-          post.status = "scheduled";
-          post.state = statusLabel(post.status);
-          post.claimId = "";
-          post.claimExpiresAt = 0;
-          changed = true;
-        }
-        if (post.status === "ready") {
-          post.status = "scheduled";
-          post.state = statusLabel(post.status);
-          changed = true;
-        }
-        if (post.status !== "scheduled" || !post.scheduledAt) continue;
-
-        const scheduledAt = new Date(post.scheduledAt).getTime();
-        if (!Number.isFinite(scheduledAt) || scheduledAt > now) continue;
-        if (!userSettings.telegramBotToken || !userSettings.telegramChatId) {
-          post.status = "error";
-          post.state = statusLabel(post.status);
-          post.lastError = "Telegram не настроен";
-          changed = true;
-          continue;
-        }
-
-        const media = Array.isArray(user.workspace?.media)
-          ? user.workspace.media.find((item) => item.id && item.id === post.mediaId)
-          : null;
-        const mediaUrl = absoluteMediaUrl(req, post.mediaUrl || media?.url);
-        const mediaType = String(post.mediaType || media?.type || "");
-        const text = [post.title, "", post.body, "", post.tags].filter(Boolean).join("\n").trim();
-        const textLimit = mediaUrl ? 1024 : 4096;
-        if (!text || text.length > textLimit) {
-          post.status = "error";
-          post.state = statusLabel(post.status);
-          post.lastError = !text
-            ? "Пустой текст публикации"
-            : `Текст длиннее лимита Telegram: ${text.length} из ${textLimit} знаков`;
-          changed = true;
-          continue;
-        }
-
-        const claimId = crypto.randomUUID();
-        post.status = "publishing";
-        post.state = statusLabel(post.status);
-        post.claimId = claimId;
-        post.claimExpiresAt = now + 15 * 60 * 1000;
-        post.lastError = "";
-        changed = true;
-
-        jobs.push({
-          claimId,
-          userId: user.id,
-          postId: String(post.id),
-          botToken: userSettings.telegramBotToken,
-          chatId: userSettings.telegramChatId,
-          text,
-          mediaUrl,
-          mediaType
-        });
-      }
-
-      syncQueueToWorkspace(user, queue);
-    }
-
-    if (changed) saveStore(store);
-    res.setHeader("Cache-Control", "no-store, max-age=0");
-    res.json({ ok: true, jobs });
-  } catch (error) {
-    console.error("[Scheduler Claim]", error);
-    res.status(500).json({ error: "Не удалось получить очередь Telegram" });
-  }
-});
-
-app.post("/api/scheduler/telegram/complete", requireGithubScheduler, (req, res) => {
-  try {
-    const {
-      userId,
-      postId,
-      claimId,
-      ok,
-      messageId,
-      error: publishError
-    } = req.body || {};
-    const store = loadStore();
-    const user = store.users.find((item) => item.id === userId);
-    const queue = user
-      ? Array.isArray(user.queue)
-        ? user.queue
-        : Array.isArray(user.workspace?.queue)
-          ? user.workspace.queue
-          : []
-      : [];
-    const post = queue.find((item) => String(item.id) === String(postId));
-
-    if (!user || !post || !claimId || post.claimId !== claimId) {
-      return res.status(409).json({ error: "Задание устарело или уже завершено" });
-    }
-
-    post.claimId = "";
-    post.claimExpiresAt = 0;
-    if (ok) {
-      post.status = "published";
-      post.state = statusLabel(post.status);
-      post.publishedAt = new Date().toISOString();
-      post.telegramMessageId = messageId || "";
-      post.lastError = "";
-      post.publishAttempts = Number(post.publishAttempts || 0) + 1;
-    } else {
-      const attempts = Number(post.publishAttempts || 0) + 1;
-      post.publishAttempts = attempts;
-      post.lastError = cleanText(publishError || "Ошибка Telegram", 500);
-      if (attempts < 3) {
-        post.status = "scheduled";
-        post.state = statusLabel(post.status);
-        post.scheduledAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-      } else {
-        post.status = "error";
-        post.state = statusLabel(post.status);
-      }
-    }
-
-    syncQueueToWorkspace(user, queue);
-    saveStore(store);
-    res.json({ ok: true, status: post.status });
-  } catch (error) {
-    console.error("[Scheduler Complete]", error);
-    res.status(500).json({ error: "Не удалось сохранить результат публикации" });
-  }
-});
 
 // ─────────────────────────────────────────────────────────────
 // INSTAGRAM PUBLISHING
@@ -3231,10 +2946,14 @@ async function runScheduledPublishing() {
   schedulerRunning = true;
   try {
     const store = loadStore();
-    const now = new Date();
+    const now = Date.now();
 
     for (const user of store.users) {
-      const queue = Array.isArray(user.queue) ? user.queue : [];
+      const queue = Array.isArray(user.queue)
+        ? user.queue
+        : Array.isArray(user.workspace?.queue)
+          ? user.workspace.queue
+          : [];
       let changed = false;
 
       for (const post of queue) {
@@ -3248,18 +2967,74 @@ async function runScheduledPublishing() {
         }
         const platform = post.platform || "telegram";
 
-        // Telegram обрабатывает внешний GitHub Actions worker. Он нужен потому,
-        // что Timeweb блокирует исходящее соединение к Telegram API.
-        if (platform === "telegram") continue;
+        if (post.status === "publishing" && Number(post.claimExpiresAt || 0) <= now) {
+          post.status = "scheduled";
+          post.state = statusLabel(post.status);
+          post.claimId = "";
+          post.claimExpiresAt = 0;
+          changed = true;
+        }
+        if (platform === "telegram" && post.status === "ready") {
+          post.status = "scheduled";
+          post.state = statusLabel(post.status);
+          changed = true;
+        }
 
         if (post.status !== "scheduled" || !post.scheduledAt) continue;
-        const postTime = new Date(post.scheduledAt);
-        if (postTime > now) continue; // Not yet time
+        const postTime = new Date(post.scheduledAt).getTime();
+        if (!Number.isFinite(postTime) || postTime > now) continue;
 
         const userSettings = getUserSettingsForServer(user);
 
         try {
-          if (platform === "instagram") {
+          if (platform === "telegram") {
+            const {
+              telegramBotToken,
+              telegramChatId,
+              telegramRelayToken
+            } = userSettings;
+            if (!telegramBotToken || !telegramChatId || !telegramRelayToken) {
+              post.status = "error";
+              post.state = statusLabel(post.status);
+              post.lastError = "Telegram настроен не полностью";
+              changed = true;
+              continue;
+            }
+
+            const media = Array.isArray(user.workspace?.media)
+              ? user.workspace.media.find((item) => item.id && item.id === post.mediaId)
+              : null;
+            const rawMediaUrl = String(post.mediaUrl || media?.url || "").trim();
+            const mediaUrl = rawMediaUrl
+              ? new URL(rawMediaUrl, `${SCHEDULER_BASE_URL}/`).href
+              : "";
+            const mediaType = String(post.mediaType || media?.type || "");
+            const text = buildTelegramText(post);
+            validateTelegramPayload(text, mediaUrl);
+
+            post.status = "publishing";
+            post.state = statusLabel(post.status);
+            post.claimId = crypto.randomUUID();
+            post.claimExpiresAt = now + 15 * 60 * 1000;
+            post.lastError = "";
+            syncQueueToWorkspace(user, queue);
+            saveStore(store);
+
+            const result = await telegramRelayCall({
+              text,
+              mediaUrl,
+              mediaType
+            }, telegramBotToken, telegramRelayToken);
+
+            post.status = "published";
+            post.state = statusLabel(post.status);
+            post.publishedAt = new Date().toISOString();
+            post.telegramMessageId = result.messageId || "";
+            post.lastError = "";
+            post.claimId = "";
+            post.claimExpiresAt = 0;
+            post.publishAttempts = Number(post.publishAttempts || 0) + 1;
+          } else if (platform === "instagram") {
             const { instagramAccessToken, instagramUserId } = userSettings;
             if (!instagramAccessToken || !instagramUserId) { post.status = "error"; post.lastError = "Instagram не настроен"; changed = true; continue; }
             if (!post.mediaUrl || !post.mediaType?.startsWith("video/")) { post.status = "error"; post.lastError = "Нет видео для Instagram Reels"; changed = true; continue; }
@@ -3300,9 +3075,18 @@ async function runScheduledPublishing() {
           changed = true;
           console.log(`[Scheduler] ${platform} published for user ${user.email}: ${post.title}`);
         } catch (pubErr) {
-          post.status = "error";
-          post.state = statusLabel(post.status);
+          const attempts = Number(post.publishAttempts || 0) + 1;
+          post.publishAttempts = attempts;
+          post.claimId = "";
+          post.claimExpiresAt = 0;
           post.lastError = String(pubErr.message || "Ошибка публикации");
+          if (platform === "telegram" && attempts < 3) {
+            post.status = "scheduled";
+            post.scheduledAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+          } else {
+            post.status = "error";
+          }
+          post.state = statusLabel(post.status);
           changed = true;
           console.error(`[Scheduler] ${platform} error for user ${user.email}:`, pubErr.message);
         }
@@ -3394,9 +3178,8 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     cwd: process.cwd()
   });
 
-  // Запускаем планировщик автопостинга каждые 60 секунд
-  setInterval(runScheduledPublishing, 60 * 1000);
-  console.log("[Scheduler] Планировщик автопостинга запущен (интервал: 60 сек)");
+  setInterval(runScheduledPublishing, SCHEDULER_INTERVAL_MS);
+  console.log(`[Scheduler] Планировщик автопостинга запущен (интервал: ${SCHEDULER_INTERVAL_MS} мс)`);
 
   // Инициализация демо-пользователей только если включена переменная окружения SEED_DEMO_USERS
   if (process.env.SEED_DEMO_USERS === "true") {

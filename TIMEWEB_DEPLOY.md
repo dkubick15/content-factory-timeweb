@@ -47,6 +47,12 @@ DEMO_PASSWORD=kubik
 # Настройки ИИ-агента Timeweb (meweb.cloud/my/cloud-ai/agents)
 TIMEWEB_API_KEY=ваш-jwt-токен-авторизации
 TIMEWEB_AGENT_ID=id-вашего-созданного-агента
+
+# Telegram-first публикация
+TELEGRAM_RELAY_URL=https://адрес-защищенного-ретранслятора
+TELEGRAM_RELAY_SIWC_TOKEN=секрет-доступа-к-ретранслятору
+TELEGRAM_BOT_TOKEN=токен-бота
+TELEGRAM_CHAT_ID=@имя_канала
 ```
 
 > [!NOTE]
