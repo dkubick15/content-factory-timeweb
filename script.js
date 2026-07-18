@@ -1611,13 +1611,20 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="panel">
           <h2 class="title">Telegram · @motorports</h2>
           <div class="form mt-16">
-            <label class="field"><span class="label">Bot Token</span><input class="input" type="password" data-action="setting-input" name="telegramBotToken" value="${escapeHtml(s.telegramBotToken)}" /></label>
-            <label class="field"><span class="label">Chat ID</span><input class="input" data-action="setting-input" name="telegramChatId" value="${escapeHtml(s.telegramChatId)}" /></label>
+            ${s.telegramManagedExternally ? `
+              <div class="metric p-12">
+                <div class="metric-label">Подключение</div>
+                <div class="metric-value fs-16">Бот и канал подключены на защищённом Worker</div>
+              </div>
+            ` : `
+              <label class="field"><span class="label">Bot Token</span><input class="input" type="password" data-action="setting-input" name="telegramBotToken" value="${escapeHtml(s.telegramBotToken)}" /></label>
+              <label class="field"><span class="label">Chat ID</span><input class="input" data-action="setting-input" name="telegramChatId" value="${escapeHtml(s.telegramChatId)}" /></label>
+            `}
             <div class="metric p-12">
               <div class="metric-label">Публикация по расписанию</div>
               <div class="metric-value fs-16">${s.telegramSchedulerReady ? "Готова · проверка каждую минуту" : "Сначала сохрани Bot Token и Chat ID"}</div>
             </div>
-            <button class="btn primary" data-action="save-server-config">Сохранить</button>
+            ${s.telegramManagedExternally ? "" : `<button class="btn primary" data-action="save-server-config">Сохранить</button>`}
           </div>
         </div>
       </div>
@@ -2052,12 +2059,20 @@ document.addEventListener("DOMContentLoaded", () => {
       const media = state.media.find((m) => m.id === post.mediaId);
       const mediaPayload = media ? { url: media.url, type: media.type } : null;
       const result = await publishTelegramFromApp(post, mediaPayload);
-      post.status = "published";
-      post.state = "Опубликовано";
-      post.publishedAt = new Date().toISOString();
-      post.telegramMessageId = result?.result?.message_id || "";
-      post.lastError = "";
-      showToast("Опубликовано в Telegram");
+      if (result?.queued) {
+        post.status = "scheduled";
+        post.state = "Запланировано";
+        post.scheduledAt = result.scheduledAt || new Date().toISOString();
+        post.lastError = "";
+        showToast("Передано в Telegram · публикация в течение минуты");
+      } else {
+        post.status = "published";
+        post.state = "Опубликовано";
+        post.publishedAt = new Date().toISOString();
+        post.telegramMessageId = result?.result?.message_id || "";
+        post.lastError = "";
+        showToast("Опубликовано в Telegram");
+      }
     } catch (e) {
       post.status = "error";
       post.state = "Ошибка";

@@ -41,11 +41,12 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-18-telegram-first-relay-v23";
+const APP_BUILD = "2026-07-18-telegram-first-worker-v24";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.accessible-visitor.workers.dev"
 ).replace(/\/+$/, "");
+const TELEGRAM_EXTERNAL_SCHEDULER = process.env.TELEGRAM_EXTERNAL_SCHEDULER !== "false";
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -694,7 +695,7 @@ function getUserSettingsForServer(user) {
     openaiApiKey: TIMEWEB_API_KEY,
     model: settings.model || DEFAULT_AI_MODEL,
     telegramBotToken: decryptSecret(settings.telegramBotTokenEnc) || process.env.TELEGRAM_BOT_TOKEN || "",
-    telegramChatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID || "",
+    telegramChatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID || (TELEGRAM_EXTERNAL_SCHEDULER ? "@motorports" : ""),
     instagramAccessToken: decryptSecret(settings.instagramAccessTokenEnc) || "",
     instagramUserId: settings.instagramUserId || "",
     youtubeRefreshToken: decryptSecret(settings.youtubeRefreshTokenEnc) || "",
@@ -1641,14 +1642,16 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
 
 app.get("/api/config", requireAuth, (req, res) => {
   const settings = getUserSettingsForClient(req.workspaceUser);
-  const telegramSchedulerReady = Boolean(settings.telegramBotToken && settings.telegramChatId);
+  const telegramSchedulerReady = TELEGRAM_EXTERNAL_SCHEDULER
+    || Boolean(settings.telegramBotToken && settings.telegramChatId);
 
   res.json({
     ok: true,
     user: getPublicUser(req.user),
     openaiReady: Boolean(settings.openaiApiKey),
-    telegramReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
+    telegramReady: telegramSchedulerReady,
     telegramSchedulerReady,
+    telegramManagedExternally: TELEGRAM_EXTERNAL_SCHEDULER,
     telegramSchedulerIntervalMinutes: 1,
     instagramReady: settings.instagramReady,
     youtubeConnected: settings.youtubeConnected,
@@ -1770,13 +1773,15 @@ app.post("/api/config", requireAuth, (req, res) => {
     saveStore(req.store);
 
     const settings = getUserSettingsForClient(user);
-    const telegramSchedulerReady = Boolean(settings.telegramBotToken && settings.telegramChatId);
+    const telegramSchedulerReady = TELEGRAM_EXTERNAL_SCHEDULER
+      || Boolean(settings.telegramBotToken && settings.telegramChatId);
     res.json({
       ok: true,
       user: getPublicUser(req.user),
       openaiReady: Boolean(settings.openaiApiKey),
-      telegramReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
+      telegramReady: telegramSchedulerReady,
       telegramSchedulerReady,
+      telegramManagedExternally: TELEGRAM_EXTERNAL_SCHEDULER,
       telegramSchedulerIntervalMinutes: 1,
       instagramReady: settings.instagramReady,
       youtubeConnected: settings.youtubeConnected,
@@ -2568,7 +2573,7 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
     const botToken = userSettings.telegramBotToken;
     const chatId = userSettings.telegramChatId;
 
-    if (!botToken || !chatId) {
+    if (!TELEGRAM_EXTERNAL_SCHEDULER && (!botToken || !chatId)) {
       return res.status(400).json({
         error: "Telegram настроен не полностью. Сохрани Bot Token и Chat ID."
       });
@@ -2584,6 +2589,42 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
     const mediaUrl = absoluteMediaUrl(req, media?.url);
     const text = buildTelegramText(post);
     validateTelegramPayload(text, mediaUrl);
+
+    if (TELEGRAM_EXTERNAL_SCHEDULER) {
+      const storedUser = req.store.users.find((item) => item.id === req.workspaceUser.id);
+      if (!storedUser) {
+        return res.status(401).json({ error: "Аккаунт не найден. Войди заново." });
+      }
+      const workspace = sanitizeWorkspace(storedUser.workspace || {});
+      let storedPost = workspace.queue.find((item) => String(item.id) === String(post.id));
+      if (!storedPost) {
+        storedPost = sanitizeWorkspace({
+          ...workspace,
+          queue: [{ ...post, mediaUrl, mediaType: String(media?.type || "") }]
+        }).queue[0];
+        workspace.queue.unshift(storedPost);
+      }
+      storedPost.status = "scheduled";
+      storedPost.state = statusLabel(storedPost.status);
+      storedPost.scheduledAt = new Date().toISOString();
+      storedPost.publishDate = datePartServer(storedPost.scheduledAt);
+      storedPost.publishTime = timePartServer(storedPost.scheduledAt);
+      storedPost.lastError = "";
+      storedPost.claimId = "";
+      storedPost.claimExpiresAt = 0;
+      storedUser.workspace = workspace;
+      syncQueueToWorkspace(storedUser, workspace.queue);
+      saveStore(req.store);
+
+      return res.json({
+        ok: true,
+        telegram: {
+          queued: true,
+          scheduledAt: storedPost.scheduledAt
+        }
+      });
+    }
+
     const result = await telegramRelayCall({
       text,
       mediaUrl,
@@ -2957,6 +2998,9 @@ async function runScheduledPublishing() {
           post.status = "scheduled";
           post.state = statusLabel(post.status);
           changed = true;
+        }
+        if (platform === "telegram" && TELEGRAM_EXTERNAL_SCHEDULER) {
+          continue;
         }
 
         if (post.status !== "scheduled" || !post.scheduledAt) continue;
