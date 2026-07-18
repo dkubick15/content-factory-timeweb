@@ -13,6 +13,7 @@ import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
+import { attachChatGptApp } from "./chatgpt-app.js";
 
 // Timeweb-контейнер может получать IPv6-адрес Telegram API без рабочего
 // IPv6-маршрута. Предпочитаем IPv4, чтобы публикация не падала с fetch failed.
@@ -41,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-18-plain-text-media-prompts-v28";
+const APP_BUILD = "2026-07-18-chatgpt-text-image-bridge-v29";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.camp-mustang.workers.dev"
@@ -1723,6 +1724,7 @@ app.get("/api/config", requireAuth, (req, res) => {
   const settings = getUserSettingsForClient(req.workspaceUser);
   const telegramSchedulerReady = TELEGRAM_EXTERNAL_SCHEDULER
     || Boolean(settings.telegramBotToken && settings.telegramChatId);
+  const chatgptMcpUrl = `${baseUrlFromRequest(req)}/mcp`;
 
   res.json({
     ok: true,
@@ -1732,6 +1734,8 @@ app.get("/api/config", requireAuth, (req, res) => {
     telegramSchedulerReady,
     telegramManagedExternally: TELEGRAM_EXTERNAL_SCHEDULER,
     telegramSchedulerIntervalMinutes: 1,
+    chatgptAppReady: true,
+    chatgptMcpUrl,
     instagramReady: settings.instagramReady,
     youtubeConnected: settings.youtubeConnected,
     youtubeOAuthEnabled: settings.youtubeOAuthEnabled,
@@ -2681,7 +2685,7 @@ function buildTelegramText(post) {
 }
 
 function validateTelegramPayload(text, mediaUrl = "") {
-  const limit = mediaUrl ? 1024 : 4096;
+  const limit = 4096;
   if (!text) throw new Error("Пустой текст публикации.");
   if (text.length > limit) {
     throw new Error(`Текст длиннее лимита Telegram: ${text.length} из ${limit} знаков.`);
@@ -3280,6 +3284,27 @@ async function runScheduledPublishing() {
     schedulerRunning = false;
   }
 }
+
+attachChatGptApp(app, {
+  rootDir: __dirname,
+  appSecret: APP_SECRET,
+  publicBaseUrl: PUBLIC_BASE_URL || SCHEDULER_BASE_URL,
+  uploadsDir,
+  maxUploadMb: MAX_UPLOAD_MB,
+  authLimiter,
+  loadStore,
+  saveStore,
+  verifyPassword,
+  ensureDemoUser,
+  demoEmail: DEMO_EMAIL,
+  demoPassword: DEMO_PASSWORD,
+  clientDemoEmail: CLIENT_DEMO_EMAIL,
+  clientSharedWorkspace: CLIENT_SHARED_WORKSPACE,
+  sanitizeWorkspace,
+  plainPublicationHeadline,
+  plainPublicationText,
+  baseUrlFromRequest
+});
 
 const distPath = path.join(__dirname, "dist");
 if (fs.existsSync(distPath)) {

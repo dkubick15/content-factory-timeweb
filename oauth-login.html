@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Подключение ChatGPT · Контент-завод</title>
+  <link rel="stylesheet" href="/oauth.css">
+</head>
+<body>
+  <main class="oauth-shell">
+    <section class="oauth-card">
+      <div class="oauth-kicker">Личное подключение</div>
+      <h1>Подключить ChatGPT</h1>
+      <p class="oauth-lead">
+        ChatGPT сможет читать бриф Motor Port и сохранять в «Контент-завод»
+        готовый комплект: текст и изображение.
+      </p>
+
+      {{ERROR_BLOCK}}
+
+      <form class="oauth-form" method="post" action="/oauth/authorize">
+        {{FORM_FIELDS}}
+
+        <label>
+          <span>Логин «Контент-завода»</span>
+          <input name="email" type="text" autocomplete="username" placeholder="kubik" required>
+        </label>
+
+        <label>
+          <span>Пароль «Контент-завода»</span>
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+
+        <button type="submit">Разрешить подключение</button>
+      </form>
+
+      <p class="oauth-note">
+        Это не логин и не пароль от ChatGPT. Публиковать в Telegram без твоей
+        проверки приложение не будет.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

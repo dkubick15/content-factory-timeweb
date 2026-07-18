@@ -1,0 +1,141 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #09090b;
+  color: #f5f5f5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(255, 207, 32, 0.12), transparent 32rem),
+    #09090b;
+}
+
+.oauth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px 16px;
+}
+
+.oauth-card {
+  width: 100%;
+  max-width: 520px;
+  padding: clamp(24px, 6vw, 44px);
+  border: 1px solid #34343a;
+  border-radius: 22px;
+  background: #18181b;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+.oauth-kicker {
+  margin-bottom: 12px;
+  color: #ffd119;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(30px, 7vw, 46px);
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.oauth-lead {
+  margin: 18px 0 28px;
+  color: #b7b7bf;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.oauth-form {
+  display: grid;
+  gap: 16px;
+}
+
+.oauth-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.oauth-form label span {
+  color: #cfcfd5;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.oauth-form input {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: 1px solid #3c3c43;
+  border-radius: 12px;
+  outline: none;
+  background: #222227;
+  color: #fff;
+  font: inherit;
+}
+
+.oauth-form input:focus {
+  border-color: #ffd119;
+  box-shadow: 0 0 0 3px rgba(255, 209, 25, 0.14);
+}
+
+.oauth-form button {
+  min-height: 52px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 12px;
+  background: #ffd119;
+  color: #111;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 850;
+}
+
+.oauth-form button:hover {
+  background: #ffe25d;
+}
+
+.oauth-form button:focus-visible {
+  outline: 3px solid rgba(255, 209, 25, 0.38);
+  outline-offset: 3px;
+}
+
+.oauth-note {
+  margin: 22px 0 0;
+  color: #8f8f98;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.oauth-error {
+  margin: 0 0 20px;
+  padding: 13px 14px;
+  border-left: 3px solid #ffd119;
+  border-radius: 8px;
+  background: #2b2720;
+  color: #fff4cc;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+@media (max-width: 430px) {
+  .oauth-shell {
+    padding: 16px 12px;
+  }
+
+  .oauth-card {
+    border-radius: 18px;
+  }
+}

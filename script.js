@@ -1687,6 +1687,23 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
         <div class="panel">
+          <h2 class="title">ChatGPT · текст + изображение</h2>
+          <div class="form mt-16">
+            <div class="metric p-12">
+              <div class="metric-label">Статус интеграции</div>
+              <div class="metric-value fs-16">${s.chatgptAppReady ? "Готова к подключению" : "Проверяется"}</div>
+            </div>
+            <label class="field">
+              <span class="label">Адрес приложения для ChatGPT</span>
+              <input class="input" value="${escapeHtml(s.chatgptMcpUrl || "")}" readonly>
+            </label>
+            <div class="actions">
+              <button class="btn primary" data-action="copy-text-custom" data-text="${escapeHtml(s.chatgptMcpUrl || "")}">${icons.copy} Скопировать адрес</button>
+            </div>
+            <p class="text">ChatGPT читает бриф Motor Port и сохраняет одобренный комплект в редактор. Автопубликации без твоей проверки нет.</p>
+          </div>
+        </div>
+        <div class="panel">
           <h2 class="title">Telegram · @motorports</h2>
           <div class="form mt-16">
             ${s.telegramManagedExternally ? `
@@ -2043,13 +2060,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function validateTelegramPost(post, media) {
     const text = formatPublicationText(post);
     if (!text) throw new Error("Сначала подготовь текст публикации.");
-    const limit = media?.url ? 1024 : 4096;
+    const limit = 4096;
     if (text.length > limit) {
-      throw new Error(
-        media?.url
-          ? `С медиа можно опубликовать до 1024 знаков. Сейчас ${text.length}. Сократи текст или убери файл.`
-          : `В одном сообщении Telegram помещается до 4096 знаков. Сейчас ${text.length}. Сократи текст.`
-      );
+      throw new Error(`В одном сообщении Telegram помещается до 4096 знаков. Сейчас ${text.length}. Сократи текст.`);
     }
     return text;
   }
@@ -2059,7 +2072,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!element) return;
     const content = selectedContent();
     const media = state.media.find((item) => item.id === state.selectedMediaId);
-    const limit = media ? 1024 : 4096;
+    const limit = 4096;
     const length = formatPublicationText({
       title: content.headline,
       body: content.body,
@@ -2069,8 +2082,8 @@ document.addEventListener("DOMContentLoaded", () => {
     element.innerHTML = `
       <span>Объём публикации: ${length} / ${limit} знаков</span>
       ${length > limit
-        ? `<strong>${media ? "С медиа Telegram допускает подпись до 1024 знаков." : "Сократи текст перед публикацией."}</strong>`
-        : `<span>Готово для одного сообщения в Telegram</span>`}
+        ? `<strong>Сократи текст перед публикацией.</strong>`
+        : `<span>${media ? "Готово: изображение появится над текстом." : "Готово для одного сообщения в Telegram"}</span>`}
     `;
   }
 
