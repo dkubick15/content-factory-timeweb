@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-chatgpt-oauth-callback-v32";
+const APP_BUILD = "2026-07-19-chatgpt-first-workspace-v33";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.camp-mustang.workers.dev"
@@ -296,11 +296,7 @@ for (const iconFile of [
   "favicon.png",
   "favicon-32x32.png",
   "favicon-16x16.png",
-  "apple-touch-icon.png",
-  "favicon-v2.png",
-  "favicon-v2-32x32.png",
-  "favicon-v2-16x16.png",
-  "apple-touch-icon-v2.png"
+  "apple-touch-icon.png"
 ]) {
   app.get(`/${iconFile}`, (req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");

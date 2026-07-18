@@ -1,4 +1,4 @@
-// Build: 2026-05-30-marketing-machine-v7
+// Build: 2026-07-19-chatgpt-first-workspace-v33
 document.addEventListener("DOMContentLoaded", () => {
   const TOKEN_KEY = "cf_full_token_v2";
   const USER_KEY = "cf_full_user_v2";
@@ -124,16 +124,12 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const tabs = [
-    ["dashboard", "Пульт", icons.logs],
-    ["database", "База проекта", icons.projects],
-    ["factory", "Завод", icons.factory],
-    ["board", "Канбан", icons.board],
-    ["media", "Медиа", icons.media],
-    ["queue", "Очередь", icons.queue],
-    ["projects", "Проекты", icons.projects],
-    ["logs", "Логи", icons.logs],
-    ["settings", "Настройки", icons.settings],
-    ["logout", "Выход", icons.logout]
+    ["materials", "Материалы"],
+    ["queue", "Очередь"],
+    ["media", "Медиа"],
+    ["project", "Проект"],
+    ["settings", "Настройки"],
+    ["logout", "Выйти"]
   ];
 
   const platforms = {
@@ -215,7 +211,7 @@ document.addEventListener("DOMContentLoaded", () => {
   ];
 
   const defaultState = {
-    activeTab: "dashboard",
+    activeTab: "materials",
     calendarView: "strip",
     activeTemplateId: "dzen-seo-sales",
     activeProjectId: "p_1",
@@ -284,6 +280,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let authMode = "login";
   let state = loadState();
+  let selectedMaterialIds = new Set();
+  let selectedQueueIds = new Set();
   let serverSyncReady = false;
   let serverSaveTimer = null;
 
@@ -331,6 +329,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!raw) return clone(defaultState);
       const parsed = JSON.parse(raw);
       const merged = clone(defaultState);
+      const legacyTabs = ["dashboard", "factory", "board"];
+      merged.activeTab = legacyTabs.includes(parsed.activeTab)
+        ? "materials"
+        : ["database", "projects"].includes(parsed.activeTab)
+          ? "project"
+          : ["materials", "queue", "media", "project", "settings"].includes(parsed.activeTab)
+            ? parsed.activeTab
+            : defaultState.activeTab;
       merged.settings = { ...clone(defaultState.settings), ...(parsed.settings || {}) };
       merged.planner = { ...clone(defaultState.planner), ...(parsed.planner || {}) };
       merged.activeTemplateId = parsed.activeTemplateId || defaultState.activeTemplateId;
@@ -742,23 +748,16 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderNav() {
-    const projectOptions = state.projects.map(p => `<option value="${p.id}" ${p.id === state.activeProjectId ? 'selected' : ''}>📁 ${escapeHtml(p.name)}</option>`).join("");
-
     el.nav.innerHTML = `
       <div class="sidebar-project-block">
-        <span class="sidebar-eyebrow">Активный проект</span>
-        <div class="inline-center gap-6">
-          <select class="select sidebar-project-select" data-action="sidebar-select-project" aria-label="Активный проект">
-            ${projectOptions}
-          </select>
-          <button class="btn icon-only primary square-button" type="button" data-action="new-project" title="Создать проект" aria-label="Создать проект">➕</button>
-        </div>
+        <span class="sidebar-eyebrow">Рабочий проект</span>
+        <strong class="sidebar-project-name">${escapeHtml(activeProject()?.name || "Motor Port")}</strong>
       </div>
-      ${tabs.map(([id, label, svg]) => `
+      ${tabs.map(([id, label]) => `
         <button class="nav-btn ${state.activeTab === id ? "active" : ""}" type="button"
           data-action="${id === "logout" ? "logout" : "tab"}" data-tab="${id}"
           ${state.activeTab === id ? 'aria-current="page"' : ""}>
-          ${svg}<span>${escapeHtml(label)}</span>
+          <span>${escapeHtml(label)}</span>
         </button>
       `).join("")}
     `;
@@ -766,46 +765,26 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderAccount() {
-    const keyReady = Boolean(state.settings.openaiReady || state.settings.openaiApiKey);
-
-    let limitHtml = "";
-    if (state.limitInfo && !state.limitInfo.isUnlimited) {
-      limitHtml = `
-        <div class="account-limit">
-          <span class="fw-600 text-accent">Лимит: ${state.limitInfo.remaining} из ${state.limitInfo.limit} генераций</span>
-          <span>Обновление каждые 24ч</span>
-        </div>
-      `;
-    } else {
-      limitHtml = `
-        <div class="account-unlimited">
-          ✨ Безлимитный аккаунт
-        </div>
-      `;
-    }
+    const aiReady = Boolean(state.settings.chatgptAppReady || state.settings.openaiReady || state.settings.openaiApiKey);
 
     el.accountPill.innerHTML = `
       <div class="fw-600 text-main">${escapeHtml(currentEmail() || "Аккаунт")}</div>
       <div class="inline-center gap-6">
-        <span class="status-dot ${keyReady ? 'is-ok' : 'is-bad'}"></span>
-        ${keyReady ? 'ИИ активен' : 'ИИ не настроен'}
+        <span class="status-dot ${aiReady ? 'is-ok' : 'is-bad'}"></span>
+        ${aiReady ? 'Сервисы подключены' : 'Проверяем подключение'}
       </div>
-      ${limitHtml}
     `;
   }
 
   function renderMain() {
     const views = {
-      dashboard: renderDashboard,
-      database: renderDatabase,
-      factory: renderFactory,
-      board: renderBoard,
+      materials: renderMaterials,
       media: renderMedia,
       queue: renderQueue,
-      projects: renderProjects,
+      project: renderProjectCenter,
       settings: renderSettings
     };
-    el.main.innerHTML = (views[state.activeTab] || renderFactory)();
+    el.main.innerHTML = (views[state.activeTab] || renderMaterials)();
   }
 
   function queueStats() {
@@ -1512,54 +1491,266 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
   }
 
+  function selectedIdeaMedia() {
+    const idea = selectedIdea();
+    const mediaId = idea?.mediaId || state.selectedMediaId || "";
+    return state.media.find((item) => item.id === mediaId) || null;
+  }
+
+  function renderMaterialCard(item) {
+    const content = item.formats?.[state.activePlatform] || item.formats?.telegram || {};
+    const media = state.media.find((candidate) => candidate.id === item.mediaId);
+    const inQueue = state.queue.filter((post) => post.sourceIdeaId === item.id && post.status !== "published").length;
+    const source = item.source === "chatgpt-app" ? "ChatGPT" : "TimeWeb";
+    return `
+      <article class="material-card ${item.id === state.selectedIdeaId ? "active" : ""}">
+        <label class="selection-check" title="Выбрать для пакетной постановки">
+          <input type="checkbox" data-action="material-check" data-id="${escapeHtml(item.id)}"
+            ${selectedMaterialIds.has(item.id) ? "checked" : ""}>
+          <span>В очередь пачкой</span>
+        </label>
+        <button class="material-open" type="button" data-action="select-idea" data-id="${escapeHtml(item.id)}">
+          <span class="item-title">${escapeHtml(content.headline || item.title || "Без заголовка")}</span>
+          <span class="item-sub">${escapeHtml(source)}${inQueue ? ` · в очереди: ${inQueue}` : ""}</span>
+        </button>
+        <div class="material-card-foot">
+          <span class="chip ${media ? "ok" : "info"}">${media ? "Картинка прикреплена" : "Без картинки"}</span>
+          <button class="btn small danger" type="button" data-action="delete-material" data-id="${escapeHtml(item.id)}">Удалить</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderMaterials() {
+    const idea = selectedIdea();
+    const content = selectedContent();
+    const media = selectedIdeaMedia();
+    const planner = ensurePlanner();
+    const textLength = formatPublicationText({
+      title: content.headline,
+      body: content.body,
+      tags: content.tags
+    }).length;
+    const chatgptPrompt = `Подготовь для проекта ${activeProject()?.name || "Motor Port"} один сильный пост для Telegram: plain text без Markdown и символов ##, с заголовком, полезным основным текстом и подходящей картинкой. После моей проверки сохрани материал в Контент-завод.`;
+
+    return `
+      <section class="page-head">
+        <div>
+          <div class="kicker">Главный рабочий экран</div>
+          <h1 class="title-xl">Материалы</h1>
+          <p class="text">Создай текст и картинку в ChatGPT, проверь здесь и отправь в Telegram сразу или по расписанию.</p>
+        </div>
+        <div class="actions">
+          <a class="btn primary" href="https://chatgpt.com/" target="_blank" rel="noopener">Открыть ChatGPT</a>
+          <button class="btn" type="button" data-action="copy-text-custom" data-text="${escapeHtml(chatgptPrompt)}">Скопировать задание</button>
+          <button class="btn" type="button" data-action="new-material">Новый материал</button>
+        </div>
+      </section>
+
+      <div class="connection-strip">
+        <div>
+          <strong>ChatGPT подключён к проекту</strong>
+          <span>Готовые тексты и изображения автоматически появляются в этом списке.</span>
+        </div>
+        <span class="chip ok">Подключено</span>
+      </div>
+
+      ${selectedMaterialIds.size ? `
+        <div class="batch-bar">
+          <div>
+            <strong>Выбрано материалов: ${selectedMaterialIds.size}</strong>
+            <span>Поставь их подряд с одинаковым интервалом.</span>
+          </div>
+          <div class="actions">
+            <button class="btn primary" type="button" data-action="open-batch-schedule" data-kind="materials">Поставить пачкой</button>
+            <button class="btn" type="button" data-action="clear-material-selection">Снять выбор</button>
+          </div>
+        </div>
+      ` : ""}
+
+      <section class="materials-layout">
+        <aside class="panel materials-list-panel">
+          <div class="section-head">
+            <div>
+              <h2 class="title">Готовые материалы</h2>
+              <p class="text">${state.ideas.length ? `Всего: ${state.ideas.length}` : "Пока пусто"}</p>
+            </div>
+          </div>
+          <div class="materials-list">
+            ${state.ideas.length
+              ? state.ideas.map(renderMaterialCard).join("")
+              : renderEmpty("Попроси ChatGPT подготовить первый пост или создай черновик вручную.")}
+          </div>
+
+          <details class="fallback-generator">
+            <summary>Резервная генерация через TimeWeb</summary>
+            <div class="form details-body" data-stop-propagation>
+              <label class="field">
+                <span class="label">Тема материала</span>
+                <textarea class="textarea minh-80" data-action="project-input" name="details" placeholder="Один конкретный вопрос или проблема читателя">${escapeHtml(activeProject()?.details || "")}</textarea>
+              </label>
+              <label class="field">
+                <span class="label">Формат</span>
+                <select class="select" data-action="apply-template-select">
+                  ${contentTemplates.map((template) => `<option value="${template.id}" ${template.id === state.activeTemplateId ? "selected" : ""}>${escapeHtml(template.name)}</option>`).join("")}
+                </select>
+              </label>
+              <label class="field">
+                <span class="label">Количество</span>
+                <select class="select" data-action="setting-input" name="ideaCount">
+                  ${[1, 2, 3, 4, 5].map((count) => `<option value="${count}" ${String(state.settings.ideaCount || "3") === String(count) ? "selected" : ""}>${count}</option>`).join("")}
+                </select>
+              </label>
+              <button class="btn" type="button" data-action="generate">Сгенерировать через TimeWeb</button>
+            </div>
+          </details>
+        </aside>
+
+        <div class="panel material-editor">
+          ${idea ? `
+            <div class="section-head editor-head">
+              <div>
+                <div class="kicker">Редактор</div>
+                <h2 class="title">Проверка перед публикацией</h2>
+              </div>
+              <div class="segmented" aria-label="Формат материала">
+                <button class="${state.activePlatform === "telegram" ? "active" : ""}" type="button" data-action="select-platform" data-platform="telegram">Пост Telegram</button>
+                <button class="${state.activePlatform === "dzen" ? "active" : ""}" type="button" data-action="select-platform" data-platform="dzen">Статья Дзен</button>
+              </div>
+            </div>
+
+            <div class="editor-grid">
+              <div class="form">
+                <label class="field">
+                  <span class="label">Заголовок</span>
+                  <input class="input" data-action="edit-content" data-field="headline" value="${escapeHtml(content.headline || "")}">
+                </label>
+                <label class="field">
+                  <span class="label">Текст</span>
+                  <textarea class="textarea material-body" data-action="edit-content" data-field="body">${escapeHtml(content.body || "")}</textarea>
+                </label>
+                <label class="field">
+                  <span class="label">Теги или подпись в конце</span>
+                  <input class="input" data-action="edit-content" data-field="tags" value="${escapeHtml(content.tags || "")}">
+                </label>
+                <div class="publication-limit ${textLength > 4096 ? "is-over" : ""}" data-publication-limit>
+                  <span>${textLength} / 4096 знаков</span>
+                  <span>${textLength > 4096 ? "Нужно сократить текст" : "Объём подходит для Telegram"}</span>
+                </div>
+              </div>
+
+              <div class="media-assignment">
+                <span class="label">Картинка материала</span>
+                ${renderPreview(media)}
+                <select class="select" data-action="select-media">
+                  <option value="">Без картинки</option>
+                  ${state.media.map((item) => `<option value="${item.id}" ${media?.id === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}
+                </select>
+                <div class="stack gap-8">
+                  <button class="btn" type="button" data-action="tab" data-tab="media">Выбрать из медиатеки</button>
+                  <button class="btn" type="button" data-action="generate-image">Сгенерировать через TimeWeb</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="schedule-panel">
+              <div class="quick-publish">
+                <button class="btn primary" type="button" data-action="publish-current-telegram">Опубликовать сейчас</button>
+                <button class="btn" type="button" data-action="quick-schedule-material" data-hours="1">Через 1 час</button>
+                <button class="btn" type="button" data-action="quick-schedule-material" data-hours="2">Через 2 часа</button>
+                <button class="btn" type="button" data-action="open-batch-schedule" data-kind="current">Выбрать время</button>
+              </div>
+              <div class="schedule-note">
+                Ближайшее предложенное время: ${escapeHtml(planner.publishDate)} в ${escapeHtml(planner.publishTime)}
+              </div>
+            </div>
+          ` : renderEmpty("Выбери материал слева или создай новый черновик.")}
+        </div>
+      </section>
+    `;
+  }
+
   function renderMedia() {
     const maxUploadMb = Number(state.settings.maxUploadMb || 50);
+    const idea = selectedIdea();
     return `
+      <section class="page-head">
+        <div>
+          <div class="kicker">Обложки и иллюстрации</div>
+          <h1 class="title-xl">Медиа</h1>
+          <p class="text">Картинки из ChatGPT появляются здесь автоматически. Любую можно назначить выбранному материалу.</p>
+        </div>
+        ${idea ? `<span class="chip info">Выбран материал: ${escapeHtml(shorten(idea.title, 45))}</span>` : ""}
+      </section>
+
       <div class="panel">
-        <h1 class="title-xl">Медиафайлы</h1>
-        <p class="text">Загружай обложки и иллюстрации для статей. Поддерживаются изображения и видео до ${maxUploadMb} МБ.</p>
-        
         <div class="upload-zone upload-zone-shell" id="uploadZone">
-          <input type="file" id="mediaFile" accept="image/*,video/*" aria-label="Выбрать изображение или видео"
-            class="upload-input" />
-          <div class="upload-icon">📁</div>
-          <div class="fw-600 text-accent">Перетащите файлы сюда или кликните для выбора</div>
-          <div class="upload-help">Поддерживаются изображения и видео до ${maxUploadMb} МБ</div>
-          
-          <!-- Preview Zone -->
+          <input type="file" id="mediaFile" accept="image/*,video/*" aria-label="Выбрать изображение или видео" class="upload-input">
+          <div class="fw-600 text-accent">Перетащи файл сюда или нажми для выбора</div>
+          <div class="upload-help">Изображения и видео до ${maxUploadMb} МБ</div>
           <div id="uploadPreview" class="upload-preview" data-stop-propagation>
             <div id="previewMediaContainer" class="upload-preview-frame"></div>
-            <div id="previewFileName" class="fs-12 fw-600 text-main">filename.png</div>
-            <button class="btn primary mt-8" data-action="upload-media">🚀 Загрузить выбранный файл</button>
+            <div id="previewFileName" class="fs-12 fw-600 text-main"></div>
+            <button class="btn primary mt-8" type="button" data-action="upload-media">Загрузить файл</button>
           </div>
         </div>
       </div>
-      <div class="auto">
-        ${state.media.length ? state.media.map(renderMediaItem).join("") : renderEmpty("Медиатека пуста.")}
+
+      <div class="media-grid">
+        ${state.media.length ? state.media.map(renderMediaItem).join("") : renderEmpty("Медиатека пока пустая.")}
       </div>
     `;
   }
 
   function renderQueue() {
     const stats = queueStats();
+    const filter = state.queueFilter || "pending";
+    const visible = state.queue.filter((item) => {
+      if (filter === "all") return true;
+      if (filter === "published") return item.status === "published";
+      if (filter === "error") return item.status === "error";
+      return !["published"].includes(item.status);
+    });
     return `
-      <div class="panel">
-        <div class="row">
-          <div>
-            <h1 class="title-xl">Telegram: очередь и публикация</h1>
-            <p class="text mt-8">Публикуй сразу или назначай дату и время. Сервер проверяет очередь каждую минуту.</p>
-          </div>
-          <button class="btn danger" data-action="clear-queue">Очистить всю очередь</button>
+      <section class="page-head">
+        <div>
+          <div class="kicker">Автопубликация в @motorports</div>
+          <h1 class="title-xl">Очередь</h1>
+          <p class="text">Публикации выходят автоматически. Здесь можно поменять время, выпустить сейчас или вернуть материал в черновики.</p>
         </div>
-        <div class="auto-tight mt-24">
-          <div class="metric"><div class="metric-value">${stats.today}</div><div class="metric-label">На сегодня</div></div>
-          <div class="metric"><div class="metric-value">${stats.scheduled}</div><div class="metric-label">Ждут публикации</div></div>
-          <div class="metric"><div class="metric-value">${stats.published}</div><div class="metric-label">Опубликовано</div></div>
-          <div class="metric"><div class="metric-value">${stats.errors}</div><div class="metric-label">Ошибки</div></div>
-        </div>
+        <label class="field queue-filter">
+          <span class="label">Показать</span>
+          <select class="select" data-action="queue-filter">
+            <option value="pending" ${filter === "pending" ? "selected" : ""}>Ожидают публикации</option>
+            <option value="published" ${filter === "published" ? "selected" : ""}>Опубликованные</option>
+            <option value="error" ${filter === "error" ? "selected" : ""}>С ошибкой</option>
+            <option value="all" ${filter === "all" ? "selected" : ""}>Все</option>
+          </select>
+        </label>
+      </section>
+
+      <div class="queue-metrics">
+        <div class="metric"><div class="metric-value">${stats.today}</div><div class="metric-label">На сегодня</div></div>
+        <div class="metric"><div class="metric-value">${stats.scheduled}</div><div class="metric-label">Ожидают</div></div>
+        <div class="metric"><div class="metric-value">${stats.published}</div><div class="metric-label">Опубликовано</div></div>
+        <div class="metric"><div class="metric-value">${stats.errors}</div><div class="metric-label">Ошибки</div></div>
       </div>
+
+      ${selectedQueueIds.size ? `
+        <div class="batch-bar">
+          <div>
+            <strong>Выбрано публикаций: ${selectedQueueIds.size}</strong>
+            <span>Перестрой расписание одним действием.</span>
+          </div>
+          <div class="actions">
+            <button class="btn primary" type="button" data-action="open-batch-schedule" data-kind="queue">Перенести пачкой</button>
+            <button class="btn" type="button" data-action="clear-queue-selection">Снять выбор</button>
+          </div>
+        </div>
+      ` : ""}
+
       <div class="stack">
-        ${state.queue.length ? state.queue.map(renderQueueCard).join("") : renderEmpty("Нет подготовленных публикаций.")}
+        ${visible.length ? visible.map(renderQueueCard).join("") : renderEmpty("В этом разделе публикаций нет.")}
       </div>
     `;
   }
@@ -1668,57 +1859,150 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
   }
 
+  function renderProjectCenter() {
+    const project = activeProject();
+    const completion = getProjectCompletionPercentage(project);
+    return `
+      <section class="page-head">
+        <div>
+          <div class="kicker">Единая база для ChatGPT и TimeWeb</div>
+          <h1 class="title-xl">Проект</h1>
+          <p class="text">Здесь лежат факты, которыми ИИ может пользоваться. Чем точнее база, тем меньше выдумок в публикациях.</p>
+        </div>
+        <span class="chip ${completionChipClass(completion)}">Заполнено: ${completion}%</span>
+      </section>
+
+      <div class="panel">
+        <div class="form">
+          <label class="field">
+            <span class="label">Сайт проекта</span>
+            <div class="inline-center gap-10">
+              <input class="input" data-action="project-input" name="landingPage" placeholder="https://site.ru" value="${escapeHtml(project.landingPage || "")}">
+              <button class="btn nowrap" type="button" data-action="import-project-url">Обновить данные с сайта</button>
+            </div>
+          </label>
+          <label class="field">
+            <span class="label">Общий бриф</span>
+            <textarea class="textarea minh-150" data-action="project-input" name="briefText" placeholder="Главное о компании, продукте и клиентах">${escapeHtml(project.briefText || "")}</textarea>
+          </label>
+          <div class="actions">
+            <button class="btn primary" type="button" data-action="import-project-brief">Разложить бриф по полям</button>
+            <button class="btn" type="button" data-action="fill-brief-template">Вставить шаблон брифа</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="project-sections">
+        <details class="panel brief-section" open>
+          <summary class="brief-summary">
+            <span>Что продаём</span>
+            <span class="details-chevron">&#9662;</span>
+          </summary>
+          <div class="form details-body" data-stop-propagation>
+            <label class="field"><span class="label">Название</span><input class="input" data-action="project-input" name="name" value="${escapeHtml(project.name || "")}"></label>
+            <label class="field"><span class="label">Ниша</span><input class="input" data-action="project-input" name="niche" value="${escapeHtml(project.niche || "")}"></label>
+            <label class="field"><span class="label">Оффер</span><textarea class="textarea minh-80" data-action="project-input" name="offer">${escapeHtml(project.offer || "")}</textarea></label>
+            <div class="auto-tight">
+              <label class="field"><span class="label">Цена или условия</span><input class="input" data-action="project-input" name="price" value="${escapeHtml(project.price || "")}"></label>
+              <label class="field"><span class="label">Сроки</span><input class="input" data-action="project-input" name="timelines" value="${escapeHtml(project.timelines || "")}"></label>
+              <label class="field"><span class="label">Гарантия</span><input class="input" data-action="project-input" name="warranty" value="${escapeHtml(project.warranty || "")}"></label>
+            </div>
+          </div>
+        </details>
+
+        <details class="panel brief-section">
+          <summary class="brief-summary">
+            <span>Кому и зачем</span>
+            <span class="details-chevron">&#9662;</span>
+          </summary>
+          <div class="form details-body" data-stop-propagation>
+            <label class="field"><span class="label">Аудитория</span><textarea class="textarea minh-80" data-action="project-input" name="audience">${escapeHtml(project.audience || "")}</textarea></label>
+            <label class="field"><span class="label">Главная боль</span><textarea class="textarea minh-80" data-action="project-input" name="pain">${escapeHtml(project.pain || "")}</textarea></label>
+            <label class="field"><span class="label">Страх или возражение</span><textarea class="textarea minh-80" data-action="project-input" name="fear">${escapeHtml(project.fear || "")}</textarea></label>
+          </div>
+        </details>
+
+        <details class="panel brief-section">
+          <summary class="brief-summary">
+            <span>Факты и доказательства</span>
+            <span class="details-chevron">&#9662;</span>
+          </summary>
+          <div class="form details-body" data-stop-propagation>
+            <label class="field"><span class="label">Что можно подтвердить</span><textarea class="textarea minh-100" data-action="project-input" name="proof">${escapeHtml(project.proof || "")}</textarea></label>
+            <label class="field"><span class="label">Цифры, кейсы, отзывы</span><textarea class="textarea minh-100" data-action="project-input" name="facts">${escapeHtml(project.facts || "")}</textarea></label>
+            <label class="field"><span class="label">Преимущества с механизмом</span><textarea class="textarea minh-80" data-action="project-input" name="advantages">${escapeHtml(project.advantages || "")}</textarea></label>
+          </div>
+        </details>
+
+        <details class="panel brief-section">
+          <summary class="brief-summary">
+            <span>Правила текста</span>
+            <span class="details-chevron">&#9662;</span>
+          </summary>
+          <div class="form details-body" data-stop-propagation>
+            <label class="field"><span class="label">Цель публикаций</span><input class="input" data-action="project-input" name="goal" value="${escapeHtml(project.goal || "")}"></label>
+            <label class="field"><span class="label">Следующий шаг для читателя</span><input class="input" data-action="project-input" name="nextStep" value="${escapeHtml(project.nextStep || "")}"></label>
+            <label class="field"><span class="label">Тон</span><input class="input" data-action="project-input" name="tone" value="${escapeHtml(project.tone || "")}"></label>
+            <label class="field"><span class="label">Что нельзя писать</span><textarea class="textarea minh-80" data-action="project-input" name="common">${escapeHtml(project.common || "")}</textarea></label>
+          </div>
+        </details>
+      </div>
+    `;
+  }
+
   function renderSettings() {
     const s = state.settings;
     return `
-      <div class="panel">
-        <h1 class="title-xl">Настройки</h1>
-        <p class="text">Telegram — единственный канал публикации. Формат текста для Дзена выбирается в редакторе.</p>
-      </div>
-      <div class="auto">
+      <section class="page-head">
+        <div>
+          <div class="kicker">Состояние подключений</div>
+          <h1 class="title-xl">Настройки</h1>
+          <p class="text">Основной канал — Telegram. Отсюда публикации автоматически забирает твой бот для Дзена.</p>
+        </div>
+      </section>
+      <div class="settings-grid">
         <div class="panel">
-          <h2 class="title">Бэкенд и ИИ</h2>
+          <h2 class="title">Сервер и TimeWeb</h2>
           <div class="form mt-16">
-            <div class="metric p-12"><div class="metric-label">Статус API</div><div class="metric-value fs-16">${escapeHtml(s.backendStatus || 'не проверен')}</div></div>
+            <div class="service-status">
+              <span class="status-dot ${s.backendStatus === "работает" ? "is-ok" : "is-bad"}"></span>
+              <div><strong>Сервер: ${escapeHtml(s.backendStatus || "проверяется")}</strong><span>TimeWeb остаётся резервной генерацией.</span></div>
+            </div>
             <div class="actions">
-              <button class="btn primary" data-action="check-backend">Проверить бэк</button>
-              <button class="btn" data-action="check-ai-key">Тест ИИ</button>
+              <button class="btn" type="button" data-action="check-backend">Проверить сервер</button>
+              <button class="btn" type="button" data-action="check-ai-key">Проверить TimeWeb</button>
             </div>
           </div>
         </div>
         <div class="panel">
-          <h2 class="title">ChatGPT · текст + изображение</h2>
+          <h2 class="title">ChatGPT</h2>
           <div class="form mt-16">
-            <div class="metric p-12">
-              <div class="metric-label">Статус интеграции</div>
-              <div class="metric-value fs-16">${s.chatgptAppReady ? "Готова к подключению" : "Проверяется"}</div>
+            <div class="service-status">
+              <span class="status-dot ${s.chatgptAppReady ? "is-ok" : "is-bad"}"></span>
+              <div><strong>${s.chatgptAppReady ? "Интеграция работает" : "Проверяем интеграцию"}</strong><span>ChatGPT читает проект и сохраняет текст вместе с картинкой.</span></div>
             </div>
             <label class="field">
-              <span class="label">Адрес приложения для ChatGPT</span>
+              <span class="label">Адрес подключения</span>
               <input class="input" value="${escapeHtml(s.chatgptMcpUrl || "")}" readonly>
             </label>
             <div class="actions">
-              <button class="btn primary" data-action="copy-text-custom" data-text="${escapeHtml(s.chatgptMcpUrl || "")}">${icons.copy} Скопировать адрес</button>
+              <button class="btn" type="button" data-action="copy-text-custom" data-text="${escapeHtml(s.chatgptMcpUrl || "")}">Скопировать адрес</button>
             </div>
-            <p class="text">ChatGPT читает бриф Motor Port и сохраняет одобренный комплект в редактор. Автопубликации без твоей проверки нет.</p>
           </div>
         </div>
         <div class="panel">
-          <h2 class="title">Telegram · @motorports</h2>
+          <h2 class="title">Telegram</h2>
           <div class="form mt-16">
             ${s.telegramManagedExternally ? `
-              <div class="metric p-12">
-                <div class="metric-label">Подключение</div>
-                <div class="metric-value fs-16">Бот и канал подключены на защищённом Worker</div>
+              <div class="service-status">
+                <span class="status-dot is-ok"></span>
+                <div><strong>@motorports подключён</strong><span>Токен хранится на защищённом Worker.</span></div>
               </div>
             ` : `
               <label class="field"><span class="label">Bot Token</span><input class="input" type="password" data-action="setting-input" name="telegramBotToken" value="${escapeHtml(s.telegramBotToken)}" /></label>
               <label class="field"><span class="label">Chat ID</span><input class="input" data-action="setting-input" name="telegramChatId" value="${escapeHtml(s.telegramChatId)}" /></label>
             `}
-            <div class="metric p-12">
-              <div class="metric-label">Публикация по расписанию</div>
-              <div class="metric-value fs-16">${s.telegramSchedulerReady ? "Готова · проверка каждую минуту" : "Сначала сохрани Bot Token и Chat ID"}</div>
-            </div>
+            <p class="text">${s.telegramSchedulerReady ? "Очередь проверяется каждую минуту." : "Сначала сохрани Bot Token и Chat ID."}</p>
             ${s.telegramManagedExternally ? "" : `<button class="btn primary" data-action="save-server-config">Сохранить</button>`}
           </div>
         </div>
@@ -1774,15 +2058,17 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderMediaItem(item) {
+    const assigned = selectedIdea()?.mediaId === item.id;
     return `
-      <div class="media-card">
+      <article class="media-card ${assigned ? "active" : ""}">
         ${renderPreview(item)}
         <div class="item-title mt-12">${escapeHtml(item.name)}</div>
+        <div class="item-sub">${item.source === "chatgpt-app" ? "Создано в ChatGPT" : "Загружено в проект"}</div>
         <div class="item-foot">
-          <button class="btn small primary" data-action="select-media-card" data-id="${item.id}">Выбрать</button>
-          <button class="btn danger small" data-action="delete-media" data-id="${item.id}">Удалить</button>
+          <button class="btn small ${assigned ? "" : "primary"}" type="button" data-action="select-media-card" data-id="${escapeHtml(item.id)}">${assigned ? "Прикреплено" : "К материалу"}</button>
+          <button class="btn danger small" type="button" data-action="delete-media" data-id="${escapeHtml(item.id)}">Удалить</button>
         </div>
-      </div>
+      </article>
     `;
   }
 
@@ -1790,29 +2076,38 @@ document.addEventListener("DOMContentLoaded", () => {
     const contentFormat = item.contentFormat || (item.platform === "dzen" ? "dzen" : "telegram");
     const platformName = platforms[contentFormat]?.name || "Материал";
     const isPublished = item.status === "published";
+    const canSelect = !isPublished;
+    const statusText = item.state || (isPublished ? "Опубликовано" : "Запланировано");
     return `
       <div class="queue-card">
+        ${canSelect ? `
+          <label class="selection-check">
+            <input type="checkbox" data-action="queue-check" data-id="${escapeHtml(item.id)}" ${selectedQueueIds.has(item.id) ? "checked" : ""}>
+            <span>Выбрать</span>
+          </label>
+        ` : ""}
         <div class="row m-0">
           <div>
             <div class="item-title">${escapeHtml(item.title)}</div>
-            <div class="item-sub">${[item.publishDate, item.publishTime].filter(Boolean).map(escapeHtml).join(" ") || "Без даты"} | ${escapeHtml(platformName)} → Telegram</div>
+            <div class="item-sub">${[item.publishDate, item.publishTime].filter(Boolean).map(escapeHtml).join(" ") || "Без даты"} · ${escapeHtml(platformName)} → Telegram</div>
           </div>
-          <span class="chip ${isPublished ? 'ok' : item.status === 'error' ? 'bad' : 'info'}">${escapeHtml(item.state)}</span>
+          <span class="chip ${isPublished ? 'ok' : item.status === 'error' ? 'bad' : 'info'}">${escapeHtml(statusText)}</span>
         </div>
         <div class="text-mono my-12">${escapeHtml(shorten(item.body, 100))}</div>
         <div class="actions">
-          <button class="btn small" data-action="open-queue" data-id="${escapeHtml(item.id)}">Редактировать</button>
+          ${!isPublished ? `<button class="btn small" type="button" data-action="open-queue" data-id="${escapeHtml(item.id)}">Изменить</button>` : ""}
           ${!isPublished
-            ? `<button class="btn green small" data-action="publish-one" data-id="${escapeHtml(item.id)}">Опубликовать в Telegram</button>`
+            ? `<button class="btn green small" type="button" data-action="publish-one" data-id="${escapeHtml(item.id)}">Опубликовать сейчас</button>
+               <button class="btn small" type="button" data-action="return-to-materials" data-id="${escapeHtml(item.id)}">Передумал — вернуть</button>`
             : ""}
-          <button class="btn danger small" data-action="remove-queue" data-id="${escapeHtml(item.id)}">Удалить</button>
+          <button class="btn danger small" type="button" data-action="remove-queue" data-id="${escapeHtml(item.id)}">Удалить</button>
         </div>
       </div>
     `;
   }
 
   function renderPreview(item) {
-    if (!item) return `<div class="preview">Нет файла</div>`;
+    if (!item) return `<div class="preview preview-empty">Картинка не выбрана</div>`;
     if (item.type?.startsWith("image/")) return `<div class="preview"><img src="${escapeHtml(item.url)}" alt="media"></div>`;
     if (item.type?.startsWith("video/")) return `<div class="preview"><video src="${escapeHtml(item.url)}"></video></div>`;
     return `<div class="preview">Файл</div>`;
@@ -1879,8 +2174,16 @@ document.addEventListener("DOMContentLoaded", () => {
       serverSyncReady = true;
       if (data.workspace && data.workspace.projects) {
         state = { ...state, ...data.workspace };
+        if (!["materials", "queue", "media", "project", "settings"].includes(state.activeTab)) {
+          state.activeTab = "materials";
+        }
         state.ideas = sanitizeContentItems(state.ideas);
         state.queue = sanitizeQueueItems(state.queue);
+        const currentIdea = state.ideas.find((idea) => idea.id === state.selectedIdeaId) || state.ideas[0];
+        if (currentIdea) {
+          state.selectedIdeaId = currentIdea.id;
+          state.selectedMediaId = currentIdea.mediaId || state.selectedMediaId || "";
+        }
         if (data.limitInfo) state.limitInfo = data.limitInfo;
         if (data.openaiReady !== undefined) state.settings.openaiReady = data.openaiReady;
         ensurePlanner();
@@ -1925,7 +2228,7 @@ document.addEventListener("DOMContentLoaded", () => {
         await copyText(brief);
       } else {
         activeProject().briefText = brief;
-        state.activeTab = "database";
+        state.activeTab = "project";
         saveState();
         scheduleWorkspaceSave();
         showToast("Шаблон брифа вставлен");
@@ -1974,10 +2277,13 @@ document.addEventListener("DOMContentLoaded", () => {
     setBusy(true); showGenerationOverlay();
     try {
       const data = await request("/api/generate", { method: "POST", body: { project: activeProject(), settings: state.settings, platform: state.activePlatform, planner: ensurePlanner(), templateId: state.activeTemplateId } });
-      state.ideas = sanitizeContentItems(data.ideas || [])
-        .map(i => ({ id: uid("i"), ...i, status: i.status || "Готово" }));
+      const generatedIdeas = sanitizeContentItems(data.ideas || [])
+        .map(i => ({ id: uid("i"), source: "timeweb", mediaId: "", ...i, status: i.status || "Готово" }));
+      state.ideas = [...generatedIdeas, ...state.ideas];
       state.critic = data.critic || null;
-      state.selectedIdeaId = state.ideas[0]?.id || ""; state.activeTab = "factory";
+      state.selectedIdeaId = generatedIdeas[0]?.id || state.ideas[0]?.id || "";
+      state.selectedMediaId = generatedIdeas[0]?.mediaId || "";
+      state.activeTab = "materials";
       showToast(data.warning ? "Получился черновик. Проверь факты перед публикацией." : "Статьи готовы");
     } catch (e) {
       showToast(cleanError(e.message));
@@ -1991,7 +2297,12 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const fd = new FormData(); fd.append("file", file); fd.append("projectId", activeProject().id);
       const data = await request("/api/upload", { method: "POST", body: fd });
-      state.media.unshift({ id: data.id, name: data.name, type: data.type, size: data.size, url: data.url });
+      state.media.unshift({ id: data.id, name: data.name, type: data.type, size: data.size, url: data.url, source: "upload" });
+      const idea = selectedIdea();
+      if (idea) {
+        idea.mediaId = data.id;
+        state.selectedMediaId = data.id;
+      }
       saveState();
       pushWorkspace();
       showToast("Загружено");
@@ -2006,6 +2317,7 @@ document.addEventListener("DOMContentLoaded", () => {
       state.queue = state.queue.map(item => item.mediaId === id
         ? { ...item, mediaId: "", mediaUrl: "", mediaType: "" }
         : item);
+      state.ideas = state.ideas.map((idea) => idea.mediaId === id ? { ...idea, mediaId: "" } : idea);
       if (state.selectedMediaId === id) state.selectedMediaId = "";
       saveState();
       showToast("Медиафайл удалён");
@@ -2027,7 +2339,7 @@ document.addEventListener("DOMContentLoaded", () => {
     );
     if (proceed) return true;
 
-    state.activeTab = "database";
+    state.activeTab = "project";
     render();
     scrollToTop();
     showToast("Сначала добавь факты, условия и доказательства");
@@ -2035,18 +2347,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function makeTelegramQueuePost(status = "scheduled") {
+    const idea = selectedIdea();
     const content = selectedContent();
     const planner = ensurePlanner();
-    const media = state.media.find((item) => item.id === state.selectedMediaId);
+    const mediaId = idea?.mediaId || state.selectedMediaId || "";
+    const media = state.media.find((item) => item.id === mediaId);
     return {
       id: uid("q"),
       projectId: state.activeProjectId,
+      sourceIdeaId: idea?.id || "",
       platform: "telegram",
       contentFormat: state.activePlatform,
       title: plainPublicationHeadline(content.headline),
       body: plainPublicationText(content.body),
       tags: plainPublicationText(content.tags),
-      mediaId: state.selectedMediaId || "",
+      mediaId,
       mediaUrl: media?.url || "",
       mediaType: media?.type || "",
       status,
@@ -2055,6 +2370,261 @@ document.addEventListener("DOMContentLoaded", () => {
       publishTime: planner.publishTime,
       scheduledAt: scheduledAtIso(planner.publishDate, planner.publishTime)
     };
+  }
+
+  function dateTimeParts(date) {
+    return {
+      publishDate: `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`,
+      publishTime: `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+    };
+  }
+
+  function publicationWord(count) {
+    const value = Math.abs(Number(count || 0));
+    const lastTwo = value % 100;
+    const last = value % 10;
+    if (lastTwo >= 11 && lastTwo <= 14) return "публикаций";
+    if (last === 1) return "публикация";
+    if (last >= 2 && last <= 4) return "публикации";
+    return "публикаций";
+  }
+
+  function roundedFutureDate(hours = 1) {
+    const date = new Date(Date.now() + hours * 60 * 60 * 1000);
+    date.setSeconds(0, 0);
+    const minutes = date.getMinutes();
+    date.setMinutes(minutes <= 30 ? 30 : 60);
+    return date;
+  }
+
+  function makeQueuePostFromIdea(idea, when, contentFormat = state.activePlatform) {
+    const content = idea?.formats?.[contentFormat] || idea?.formats?.telegram || idea?.formats?.dzen || {};
+    const mediaId = idea?.mediaId || "";
+    const media = state.media.find((item) => item.id === mediaId);
+    const parts = dateTimeParts(when);
+    return {
+      id: uid("q"),
+      projectId: state.activeProjectId,
+      sourceIdeaId: idea?.id || "",
+      platform: "telegram",
+      contentFormat,
+      title: plainPublicationHeadline(content.headline || idea?.title || ""),
+      body: plainPublicationText(content.body || ""),
+      tags: plainPublicationText(content.tags || ""),
+      mediaId,
+      mediaUrl: media?.url || "",
+      mediaType: media?.type || "",
+      status: "scheduled",
+      state: "Запланировано",
+      ...parts,
+      scheduledAt: when.toISOString()
+    };
+  }
+
+  function createMaterial() {
+    const id = uid("i");
+    const blank = {
+      id,
+      source: "manual",
+      title: "Новый материал",
+      angle: "Черновик",
+      pillar: "Ручной материал",
+      status: "Черновик",
+      mediaId: "",
+      formats: {
+        telegram: { format: "Пост Telegram", headline: "", body: "", tags: "" },
+        dzen: { format: "Статья Дзен", headline: "", body: "", tags: "" }
+      }
+    };
+    state.ideas.unshift(blank);
+    state.selectedIdeaId = id;
+    state.activePlatform = "telegram";
+    state.selectedMediaId = "";
+    saveState();
+    render();
+    showToast("Новый черновик создан");
+  }
+
+  function deleteMaterial(id) {
+    const idea = state.ideas.find((item) => item.id === id);
+    if (!idea || !confirm(`Удалить материал «${idea.title || "Без заголовка"}»? Публикации в очереди останутся.`)) return;
+    state.ideas = state.ideas.filter((item) => item.id !== id);
+    selectedMaterialIds.delete(id);
+    if (state.selectedIdeaId === id) {
+      state.selectedIdeaId = state.ideas[0]?.id || "";
+      state.selectedMediaId = state.ideas[0]?.mediaId || "";
+    }
+    saveState();
+    render();
+    showToast("Материал удалён");
+  }
+
+  async function scheduleMaterialAfter(hours) {
+    const idea = selectedIdea();
+    if (!idea) return showToast("Сначала выбери материал");
+    const when = roundedFutureDate(Number(hours || 1));
+    const post = makeQueuePostFromIdea(idea, when);
+    try {
+      validateTelegramPost(post, state.media.find((item) => item.id === post.mediaId));
+    } catch (error) {
+      return showToast(error.message);
+    }
+    state.queue.unshift(post);
+    saveState();
+    await pushWorkspace();
+    showToast(`Запланировано на ${post.publishDate} в ${post.publishTime}`);
+    render();
+  }
+
+  function openBatchScheduleModal(kind = "materials") {
+    const start = roundedFutureDate(1);
+    const parts = dateTimeParts(start);
+    const count = kind === "queue"
+      ? selectedQueueIds.size
+      : kind === "current"
+        ? (selectedIdea() ? 1 : 0)
+        : selectedMaterialIds.size;
+    if (!count) {
+      showToast(kind === "queue" ? "Выбери публикации" : "Выбери материалы");
+      return;
+    }
+    const title = kind === "queue" ? "Перестроить расписание" : count > 1 ? "Поставить материалы пачкой" : "Выбрать время публикации";
+    mountModal(`
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h2 class="modal-title">${escapeHtml(title)}</h2>
+            <button class="btn" type="button" data-action="close-modal" aria-label="Закрыть">Закрыть</button>
+          </div>
+          <div class="modal-body" data-stop-propagation>
+            <p class="text">Выбрано: ${count}. Первая публикация выйдет в указанное время, остальные — с выбранным интервалом.</p>
+            <div class="form">
+              <div class="auto-tight">
+                <label class="field"><span class="label">Дата старта</span><input class="input" type="date" id="batchDate" value="${parts.publishDate}"></label>
+                <label class="field"><span class="label">Время старта</span><input class="input" type="time" id="batchTime" value="${parts.publishTime}"></label>
+              </div>
+              <label class="field">
+                <span class="label">Интервал</span>
+                <select class="select" id="batchInterval">
+                  <option value="1">Каждый час</option>
+                  <option value="2">Каждые 2 часа</option>
+                  <option value="3">Каждые 3 часа</option>
+                  <option value="6">Каждые 6 часов</option>
+                  <option value="24">Раз в день</option>
+                </select>
+              </label>
+              <button class="btn primary" type="button" data-action="apply-batch-schedule" data-kind="${escapeHtml(kind)}">
+                ${kind === "queue" ? "Сохранить новое расписание" : "Поставить в очередь"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  async function applyBatchSchedule(kind) {
+    const dateValue = document.getElementById("batchDate")?.value || "";
+    const timeValue = document.getElementById("batchTime")?.value || "";
+    const intervalHours = Number(document.getElementById("batchInterval")?.value || 1);
+    const start = new Date(`${dateValue}T${timeValue}:00`);
+    if (Number.isNaN(start.getTime()) || start.getTime() < Date.now() - 60000) {
+      showToast("Выбери время не раньше текущего");
+      return;
+    }
+
+    if (kind === "queue") {
+      const posts = state.queue
+        .filter((post) => selectedQueueIds.has(post.id) && post.status !== "published")
+        .sort((a, b) => String(a.scheduledAt || "").localeCompare(String(b.scheduledAt || "")));
+      posts.forEach((post, index) => {
+        const when = new Date(start.getTime() + index * intervalHours * 60 * 60 * 1000);
+        const parts = dateTimeParts(when);
+        Object.assign(post, parts, {
+          scheduledAt: when.toISOString(),
+          status: "scheduled",
+          state: "Запланировано",
+          lastError: ""
+        });
+      });
+      selectedQueueIds.clear();
+      showToast(`Расписание обновлено: ${posts.length} ${publicationWord(posts.length)}`);
+    } else {
+      const ids = kind === "current"
+        ? [selectedIdea()?.id].filter(Boolean)
+        : state.ideas.map((idea) => idea.id).filter((id) => selectedMaterialIds.has(id));
+      const posts = [];
+      for (let index = 0; index < ids.length; index += 1) {
+        const idea = state.ideas.find((item) => item.id === ids[index]);
+        if (!idea) continue;
+        const when = new Date(start.getTime() + index * intervalHours * 60 * 60 * 1000);
+        const post = makeQueuePostFromIdea(idea, when);
+        try {
+          validateTelegramPost(post, state.media.find((item) => item.id === post.mediaId));
+          posts.push(post);
+        } catch (error) {
+          showToast(`«${idea.title || "Материал"}»: ${error.message}`);
+          return;
+        }
+      }
+      state.queue = [...posts, ...state.queue];
+      selectedMaterialIds.clear();
+      state.activeTab = "queue";
+      showToast(`В очередь добавлено: ${posts.length} ${publicationWord(posts.length)}`);
+    }
+
+    el.modalRoot.innerHTML = "";
+    saveState();
+    await pushWorkspace();
+    render();
+    scrollToTop();
+  }
+
+  function returnToMaterials(id) {
+    const post = state.queue.find((item) => item.id === id);
+    if (!post) return;
+    let idea = state.ideas.find((item) => item.id === post.sourceIdeaId);
+    if (!idea) {
+      const newId = uid("i");
+      idea = {
+        id: newId,
+        source: "queue-return",
+        title: post.title || "Возвращённый материал",
+        angle: "Возвращено из очереди",
+        pillar: "Черновик",
+        status: "Черновик",
+        mediaId: post.mediaId || "",
+        formats: {
+          telegram: { format: "Пост Telegram", headline: post.title || "", body: post.body || "", tags: post.tags || "" },
+          dzen: { format: "Статья Дзен", headline: post.title || "", body: post.body || "", tags: post.tags || "" }
+        }
+      };
+      state.ideas.unshift(idea);
+    } else {
+      const format = post.contentFormat || "telegram";
+      idea.formats = idea.formats || {};
+      idea.formats[format] = {
+        ...(idea.formats[format] || {}),
+        format: platforms[format]?.name || "Материал",
+        headline: post.title || "",
+        body: post.body || "",
+        tags: post.tags || ""
+      };
+      idea.title = post.title || idea.title;
+      idea.mediaId = post.mediaId || "";
+      idea.status = "Черновик";
+    }
+    state.queue = state.queue.filter((item) => item.id !== id);
+    selectedQueueIds.delete(id);
+    state.selectedIdeaId = idea.id;
+    state.selectedMediaId = idea.mediaId || "";
+    state.activePlatform = post.contentFormat || "telegram";
+    state.activeTab = "materials";
+    saveState();
+    pushWorkspace();
+    render();
+    scrollToTop();
+    showToast("Материал возвращён в черновики");
   }
 
   function validateTelegramPost(post, media) {
@@ -2201,8 +2771,10 @@ document.addEventListener("DOMContentLoaded", () => {
     setBusy(true); showToast("Генерируем изображение...");
     try {
       const data = await request("/api/generate-image", { method: "POST", body: { prompt: promptText } });
-      state.media.unshift({ id: data.id, name: data.name, type: data.type, size: data.size, url: data.url });
+      state.media.unshift({ id: data.id, name: data.name, type: data.type, size: data.size, url: data.url, source: "timeweb" });
       state.selectedMediaId = data.id;
+      const idea = selectedIdea();
+      if (idea) idea.mediaId = data.id;
       if (data.limitInfo) state.limitInfo = data.limitInfo;
       showToast("Изображение готово");
     } catch (e) {
@@ -2221,29 +2793,17 @@ document.addEventListener("DOMContentLoaded", () => {
     ].join("");
 
     mountModal(`
-      <div class="modal-backdrop"><div class="modal-card"><div class="modal-head"><h2 class="modal-title">Редактировать публикацию</h2><button class="btn icon-only" type="button" data-action="close-modal" aria-label="Закрыть">${icons.close}</button></div><div class="modal-body" data-stop-propagation><div class="form">
+      <div class="modal-backdrop"><div class="modal-card"><div class="modal-head"><h2 class="modal-title">Изменить публикацию</h2><button class="btn" type="button" data-action="close-modal" aria-label="Закрыть">Закрыть</button></div><div class="modal-body" data-stop-propagation><div class="form">
         <label class="field"><span class="label">Заголовок</span><input class="input" id="editQTitle" value="${escapeHtml(p.title)}"></label>
         <label class="field"><span class="label">Текст</span><textarea class="textarea minh-120" id="editQBody">${escapeHtml(p.body)}</textarea></label>
         
-        <div class="auto-tight">
-          <label class="field">
-            <span class="label">Формат материала</span>
-            <select class="select" id="editQContentFormat">
-              <option value="dzen" ${(p.contentFormat || (p.platform === "dzen" ? "dzen" : "")) === "dzen" ? "selected" : ""}>Статья для Дзена</option>
-              <option value="telegram" ${(p.contentFormat || p.platform) === "telegram" ? "selected" : ""}>Пост для Telegram</option>
-            </select>
-          </label>
-          
-          <label class="field">
-            <span class="label">Статус</span>
-            <select class="select" id="editQStatus">
-              <option value="scheduled" ${p.status === "scheduled" ? "selected" : ""}>Запланировано</option>
-              <option value="publishing" ${p.status === "publishing" ? "selected" : ""}>Публикуется</option>
-              <option value="published" ${p.status === "published" ? "selected" : ""}>Опубликовано</option>
-              <option value="error" ${p.status === "error" ? "selected" : ""}>Ошибка</option>
-            </select>
-          </label>
-        </div>
+        <label class="field">
+          <span class="label">Формат материала</span>
+          <select class="select" id="editQContentFormat">
+            <option value="dzen" ${(p.contentFormat || (p.platform === "dzen" ? "dzen" : "")) === "dzen" ? "selected" : ""}>Статья для Дзена</option>
+            <option value="telegram" ${(p.contentFormat || p.platform) === "telegram" ? "selected" : ""}>Пост для Telegram</option>
+          </select>
+        </label>
 
         <div class="metric p-12">
           <div class="metric-label">Канал публикации</div>
@@ -2256,14 +2816,17 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
 
         <label class="field">
-          <span class="label">Прикрепленный медиа-файл</span>
+          <span class="label">Картинка</span>
           <select class="select" id="editQMediaId">
             ${mediaOptions}
           </select>
         </label>
 
         ${p.lastError ? `<div class="log bad"><div class="log-text">${escapeHtml(p.lastError)}</div></div>` : ""}
-        <button class="btn primary mt-16" data-action="save-queue" data-id="${p.id}">Сохранить изменения</button>
+        <div class="actions mt-16">
+          <button class="btn primary" type="button" data-action="save-queue" data-id="${p.id}">Сохранить изменения</button>
+          <button class="btn" type="button" data-action="return-to-materials" data-id="${p.id}">Передумал — вернуть в материалы</button>
+        </div>
       </div></div></div></div>
     `);
   }
@@ -2297,17 +2860,40 @@ document.addEventListener("DOMContentLoaded", () => {
     if (a === "toggle-burger") { toggleNavMenu(); return; }
     if (a === "tab") { state.activeTab = t.dataset.tab; closeNavMenu(); render(); scrollToTop(); return; }
     if (a === "logout") { logout(); return; }
+    if (a === "new-material") { createMaterial(); return; }
     if (a === "apply-template") { applyTemplateById(t.dataset.template); render(); return; }
     if (a === "generate") { generate(); return; }
     if (a === "fill-brief-template") { makeBriefTemplate(); return; }
     if (a === "copy-generated-brief") { makeBriefTemplate({ copyOnly: true }); return; }
     if (a === "import-project-brief") { importProjectBrief(); return; }
     if (a === "import-project-url") { importProjectUrl(); return; }
-    if (a === "select-idea") { state.selectedIdeaId = t.dataset.id; render(); return; }
+    if (a === "select-idea") {
+      const idea = state.ideas.find((item) => item.id === t.dataset.id);
+      if (!idea) return;
+      state.selectedIdeaId = idea.id;
+      state.selectedMediaId = idea.mediaId || "";
+      saveState();
+      render();
+      return;
+    }
+    if (a === "delete-material") { deleteMaterial(t.dataset.id); return; }
     if (a === "swap-hook") { swapFirstParagraph(t.dataset.hook || ""); return; }
     if (a === "select-platform") {
-      const platformTemplate = contentTemplates.find(item => item.platform === t.dataset.platform);
-      if (platformTemplate) applyTemplateById(platformTemplate.id);
+      state.activePlatform = t.dataset.platform === "dzen" ? "dzen" : "telegram";
+      const idea = selectedIdea();
+      if (idea) {
+        idea.formats = idea.formats || {};
+        if (!idea.formats[state.activePlatform]) {
+          const fallback = idea.formats.telegram || idea.formats.dzen || {};
+          idea.formats[state.activePlatform] = {
+            format: platforms[state.activePlatform].name,
+            headline: fallback.headline || idea.title || "",
+            body: fallback.body || "",
+            tags: fallback.tags || ""
+          };
+        }
+      }
+      saveState();
       render();
       return;
     }
@@ -2316,6 +2902,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (a === "remove-queue") {
       if (confirm("Вы действительно хотите удалить эту публикацию из очереди?")) {
         state.queue = state.queue.filter(q => q.id !== t.dataset.id);
+        selectedQueueIds.delete(t.dataset.id);
+        saveState();
+        pushWorkspace();
         render();
       }
       return;
@@ -2329,28 +2918,45 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (a === "publish-one") { publishOne(t.dataset.id); return; }
     if (a === "open-queue") { openQueueModal(t.dataset.id); return; }
+    if (a === "return-to-materials") { returnToMaterials(t.dataset.id); el.modalRoot.innerHTML = ""; return; }
+    if (a === "quick-schedule-material") { scheduleMaterialAfter(Number(t.dataset.hours || 1)); return; }
+    if (a === "open-batch-schedule") { openBatchScheduleModal(t.dataset.kind || "materials"); return; }
+    if (a === "apply-batch-schedule") { applyBatchSchedule(t.dataset.kind || "materials"); return; }
+    if (a === "clear-material-selection") { selectedMaterialIds.clear(); render(); return; }
+    if (a === "clear-queue-selection") { selectedQueueIds.clear(); render(); return; }
     if (a === "save-queue") {
       const p = state.queue.find(q => q.id === t.dataset.id);
       if (p) {
-        p.title = document.getElementById("editQTitle").value;
-        p.body = document.getElementById("editQBody").value;
-        p.platform = "telegram";
-        p.contentFormat = document.getElementById("editQContentFormat").value;
-        p.status = document.getElementById("editQStatus").value;
-        p.state = p.status === "published"
-          ? "Опубликовано"
-          : p.status === "error"
-            ? "Ошибка"
-            : p.status === "publishing"
-              ? "Публикуется"
-              : "Запланировано";
-        p.publishDate = document.getElementById("editQDate").value;
-        p.publishTime = document.getElementById("editQTime").value;
-        p.scheduledAt = scheduledAtIso(p.publishDate, p.publishTime);
-        p.mediaId = document.getElementById("editQMediaId").value || "";
-        const media = state.media.find((item) => item.id === p.mediaId);
-        p.mediaUrl = media?.url || "";
-        p.mediaType = media?.type || "";
+        const publishDate = document.getElementById("editQDate").value;
+        const publishTime = document.getElementById("editQTime").value;
+        const scheduledAt = scheduledAtIso(publishDate, publishTime);
+        const mediaId = document.getElementById("editQMediaId").value || "";
+        const media = state.media.find((item) => item.id === mediaId);
+        const nextPost = {
+          ...p,
+          title: plainPublicationHeadline(document.getElementById("editQTitle").value),
+          body: plainPublicationText(document.getElementById("editQBody").value),
+          platform: "telegram",
+          contentFormat: document.getElementById("editQContentFormat").value,
+          status: "scheduled",
+          state: "Запланировано",
+          publishDate,
+          publishTime,
+          scheduledAt,
+          mediaId,
+          mediaUrl: media?.url || "",
+          mediaType: media?.type || ""
+        };
+        try {
+          validateTelegramPost(nextPost, media);
+          if (!scheduledAt || new Date(scheduledAt).getTime() < Date.now() - 60000) {
+            throw new Error("Выбери время не раньше текущего.");
+          }
+        } catch (error) {
+          showToast(error.message);
+          return;
+        }
+        Object.assign(p, nextPost);
         p.lastError = "";
         saveState();
         pushWorkspace();
@@ -2358,7 +2964,16 @@ document.addEventListener("DOMContentLoaded", () => {
       el.modalRoot.innerHTML = ""; render(); return;
     }
     if (a === "upload-media") { uploadMedia(); return; }
-    if (a === "select-media-card") { state.selectedMediaId = t.dataset.id; showToast("Выбрано"); render(); return; }
+    if (a === "select-media-card") {
+      state.selectedMediaId = t.dataset.id;
+      const idea = selectedIdea();
+      if (idea) idea.mediaId = t.dataset.id;
+      saveState();
+      pushWorkspace();
+      showToast(idea ? "Картинка прикреплена к материалу" : "Картинка выбрана");
+      render();
+      return;
+    }
     if (a === "delete-media") {
       deleteMedia(t.dataset.id);
       return;
@@ -2514,9 +3129,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.addEventListener("change", (e) => {
     const t = e.target;
+    if (t.matches('[data-action="material-check"]')) {
+      if (t.checked) selectedMaterialIds.add(t.dataset.id);
+      else selectedMaterialIds.delete(t.dataset.id);
+      render();
+      return;
+    }
+    if (t.matches('[data-action="queue-check"]')) {
+      if (t.checked) selectedQueueIds.add(t.dataset.id);
+      else selectedQueueIds.delete(t.dataset.id);
+      render();
+      return;
+    }
+    if (t.matches('[data-action="queue-filter"]')) {
+      state.queueFilter = t.value;
+      render();
+      return;
+    }
     if (t.matches('[data-action="apply-template-select"]')) { applyTemplateById(t.value); render(); }
     if (t.matches('[data-action="setting-input"]')) { state.settings[t.name] = t.value; saveState(); scheduleWorkspaceSave(); }
-    if (t.matches('[data-action="select-media"]')) { state.selectedMediaId = t.value; saveState(); render(); }
+    if (t.matches('[data-action="select-media"]')) {
+      state.selectedMediaId = t.value;
+      const idea = selectedIdea();
+      if (idea) idea.mediaId = t.value;
+      saveState();
+      render();
+    }
     if (t.matches('[data-action="sidebar-select-project"]')) { state.activeProjectId = t.value; render(); }
     if (t.matches('[data-action="edit-content"]')) {
       const idea = selectedIdea();
