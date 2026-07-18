@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-chatgpt-oauth-stability-v30";
+const APP_BUILD = "2026-07-19-chatgpt-oauth-csp-v31";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.camp-mustang.workers.dev"
@@ -190,6 +190,13 @@ if (!APP_SECRET) {
 const corsOrigin = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((item) => item.trim()).filter(Boolean)
   : process.env.NODE_ENV === "production" ? false : true;
+const oauthFormActionOrigin = (() => {
+  try {
+    return new URL(PUBLIC_BASE_URL || SCHEDULER_BASE_URL).origin;
+  } catch {
+    return "https://cf-kubik.twc1.net";
+  }
+})();
 
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.set("trust proxy", 1);
@@ -206,7 +213,10 @@ app.use(helmet({
       fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
-      formAction: ["'self'"],
+      // ChatGPT может открыть OAuth-страницу в изолированном контексте с
+      // opaque origin. В таком окне CSP 'self' не совпадает даже с нашим
+      // собственным URL, поэтому разрешаем точный production origin явно.
+      formAction: ["'self'", oauthFormActionOrigin],
       frameAncestors: ["'none'"],
       upgradeInsecureRequests: null
     }
