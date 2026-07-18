@@ -41,9 +41,14 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-17-telegram-browser-fallback-v19";
+const APP_BUILD = "2026-07-18-telegram-first-scheduler-v20";
 
 const TELEGRAM_API_IPV4 = process.env.TELEGRAM_API_IPV4 || "149.154.166.110";
+const GITHUB_SCHEDULER_REPOSITORY = process.env.GITHUB_SCHEDULER_REPOSITORY || "dkubick15/content-factory-timeweb";
+const GITHUB_SCHEDULER_WORKFLOW = `${GITHUB_SCHEDULER_REPOSITORY}/.github/workflows/telegram-scheduler.yml@refs/heads/main`;
+const GITHUB_OIDC_AUDIENCE = process.env.GITHUB_OIDC_AUDIENCE || "content-factory-telegram-scheduler";
+const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
+const GITHUB_OIDC_JWKS_URL = process.env.GITHUB_OIDC_JWKS_URL || "https://token.actions.githubusercontent.com/.well-known/jwks";
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -943,6 +948,98 @@ function requireAuth(req, res, next) {
   next();
 }
 
+let githubOidcJwksCache = {
+  expiresAt: 0,
+  keys: []
+};
+
+function decodeJwtJson(value) {
+  return JSON.parse(Buffer.from(String(value || ""), "base64url").toString("utf8"));
+}
+
+async function getGithubOidcKeys(forceRefresh = false) {
+  if (!forceRefresh && githubOidcJwksCache.expiresAt > Date.now() && githubOidcJwksCache.keys.length) {
+    return githubOidcJwksCache.keys;
+  }
+
+  const response = await withTimeout(
+    fetch(GITHUB_OIDC_JWKS_URL, {
+      headers: { Accept: "application/json" }
+    }),
+    15000,
+    "GitHub OIDC"
+  );
+  if (!response.ok) {
+    throw new Error(`GitHub OIDC JWKS недоступен (${response.status})`);
+  }
+
+  const data = await response.json();
+  const keys = Array.isArray(data?.keys) ? data.keys : [];
+  if (!keys.length) throw new Error("GitHub OIDC не вернул ключи подписи");
+
+  githubOidcJwksCache = {
+    expiresAt: Date.now() + 6 * 60 * 60 * 1000,
+    keys
+  };
+  return keys;
+}
+
+async function verifyGithubSchedulerToken(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) throw new Error("Некорректный GitHub OIDC token");
+
+  const [headerPart, payloadPart, signaturePart] = parts;
+  const header = decodeJwtJson(headerPart);
+  const payload = decodeJwtJson(payloadPart);
+  if (header.alg !== "RS256" || !header.kid) {
+    throw new Error("Неподдерживаемая подпись GitHub OIDC");
+  }
+
+  let keys = await getGithubOidcKeys();
+  let jwk = keys.find((item) => item.kid === header.kid);
+  if (!jwk) {
+    keys = await getGithubOidcKeys(true);
+    jwk = keys.find((item) => item.kid === header.kid);
+  }
+  if (!jwk) throw new Error("Ключ GitHub OIDC не найден");
+
+  const publicKey = crypto.createPublicKey({ key: jwk, format: "jwk" });
+  const isValid = crypto.verify(
+    "RSA-SHA256",
+    Buffer.from(`${headerPart}.${payloadPart}`),
+    publicKey,
+    Buffer.from(signaturePart, "base64url")
+  );
+  if (!isValid) throw new Error("Подпись GitHub OIDC не прошла проверку");
+
+  const now = Math.floor(Date.now() / 1000);
+  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  const allowedEvents = new Set(["schedule", "workflow_dispatch"]);
+  if (payload.iss !== GITHUB_OIDC_ISSUER) throw new Error("Некорректный GitHub OIDC issuer");
+  if (!audiences.includes(GITHUB_OIDC_AUDIENCE)) throw new Error("Некорректный GitHub OIDC audience");
+  if (!payload.exp || payload.exp < now - 30) throw new Error("GitHub OIDC token истёк");
+  if (payload.nbf && payload.nbf > now + 30) throw new Error("GitHub OIDC token ещё не действует");
+  if (payload.repository !== GITHUB_SCHEDULER_REPOSITORY) throw new Error("Репозиторий планировщика не разрешён");
+  if (payload.ref !== "refs/heads/main") throw new Error("Планировщик запущен не из main");
+  if (payload.workflow_ref !== GITHUB_SCHEDULER_WORKFLOW) throw new Error("Workflow планировщика не разрешён");
+  if (!allowedEvents.has(payload.event_name)) throw new Error("Событие планировщика не разрешено");
+
+  return payload;
+}
+
+async function requireGithubScheduler(req, res, next) {
+  try {
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    if (!token) return res.status(401).json({ error: "Нет GitHub OIDC token" });
+    req.githubScheduler = await verifyGithubSchedulerToken(token);
+    next();
+  } catch (error) {
+    console.error("[Scheduler OIDC]", error.message);
+    res.status(401).json({ error: "Планировщик не авторизован" });
+  }
+}
+
 function enforceGenerationLimit(req, res, next) {
   // Лимит применяется только к тестовым демо-аккаунтам. Только ПРОВЕРКА:
   // само списание делаем в consumeGenerationLimit() после успешного результата,
@@ -1413,7 +1510,7 @@ function defaultWorkspace() {
     selectedIdeaId: "",
     selectedMediaId: "",
     planner: {
-      placement: "Дзен",
+      placement: "Telegram",
       goal: "получить заявку",
       reason: "",
       formatNote: ""
@@ -1458,15 +1555,15 @@ function sanitizeWorkspace(input = {}) {
     const media = workspace.media.find((item) => item.id && item.id === post.mediaId) || {};
     const publishDate = post.publishDate || datePartServer(post.scheduledAt);
     const publishTime = post.publishTime || timePartServer(post.scheduledAt);
-    const platform = ["dzen", "telegram", "instagram", "youtube"].includes(post.platform)
-      ? post.platform
-      : "dzen";
+    const contentFormat = post.contentFormat || (post.platform === "dzen" ? "dzen" : "telegram");
+    const platform = "telegram";
     const sourceStatus = post.status || (post.state === "Опубликовано" ? "published" : "scheduled");
-    const status = platform === "dzen" && sourceStatus === "scheduled" ? "ready" : sourceStatus;
+    const status = sourceStatus === "ready" ? "scheduled" : sourceStatus;
     return {
       ...post,
       id: String(post.id || crypto.randomUUID()),
       platform,
+      contentFormat: ["dzen", "telegram"].includes(contentFormat) ? contentFormat : "telegram",
       status,
       state: statusLabel(status),
       publishDate,
@@ -1639,6 +1736,8 @@ app.get("/api/config", requireAuth, (req, res) => {
     user: getPublicUser(req.user),
     openaiReady: Boolean(settings.openaiApiKey),
     telegramReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
+    telegramSchedulerReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
+    telegramSchedulerIntervalMinutes: 5,
     instagramReady: settings.instagramReady,
     youtubeConnected: settings.youtubeConnected,
     youtubeOAuthEnabled: settings.youtubeOAuthEnabled,
@@ -1759,6 +1858,8 @@ app.post("/api/config", requireAuth, (req, res) => {
       user: getPublicUser(req.user),
       openaiReady: Boolean(settings.openaiApiKey),
       telegramReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
+      telegramSchedulerReady: Boolean(settings.telegramBotToken && settings.telegramChatId),
+      telegramSchedulerIntervalMinutes: 5,
       instagramReady: settings.instagramReady,
       youtubeConnected: settings.youtubeConnected,
       youtubeOAuthEnabled: settings.youtubeOAuthEnabled,
@@ -2678,6 +2779,181 @@ app.post("/api/telegram/browser-config", requireAuth, publishLimiter, (req, res)
   });
 });
 
+function syncQueueToWorkspace(user, queue) {
+  user.queue = queue;
+  user.workspace = user.workspace && typeof user.workspace === "object"
+    ? { ...user.workspace, queue }
+    : { ...defaultWorkspace(), queue };
+  user.updatedAt = new Date().toISOString();
+}
+
+function absoluteMediaUrl(req, value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw, baseUrlFromRequest(req)).href;
+  } catch {
+    return "";
+  }
+}
+
+app.post("/api/scheduler/telegram/claim", requireGithubScheduler, async (req, res) => {
+  try {
+    const store = loadStore();
+    const now = Date.now();
+    const limit = Math.max(1, Math.min(Number(req.body?.limit) || 10, 20));
+    const jobs = [];
+    let changed = false;
+
+    for (const user of store.users) {
+      if (jobs.length >= limit) break;
+      const queue = Array.isArray(user.queue)
+        ? user.queue
+        : Array.isArray(user.workspace?.queue)
+          ? user.workspace.queue
+          : [];
+      const userSettings = getUserSettingsForServer(user);
+
+      for (const post of queue) {
+        if (jobs.length >= limit) break;
+        if (post.platform === "dzen") {
+          post.contentFormat = "dzen";
+          post.platform = "telegram";
+          if (post.status === "ready") post.status = "scheduled";
+          changed = true;
+        }
+        if (post.platform !== "telegram") continue;
+
+        if (post.status === "publishing" && Number(post.claimExpiresAt || 0) <= now) {
+          post.status = "scheduled";
+          post.state = statusLabel(post.status);
+          post.claimId = "";
+          post.claimExpiresAt = 0;
+          changed = true;
+        }
+        if (post.status === "ready") {
+          post.status = "scheduled";
+          post.state = statusLabel(post.status);
+          changed = true;
+        }
+        if (post.status !== "scheduled" || !post.scheduledAt) continue;
+
+        const scheduledAt = new Date(post.scheduledAt).getTime();
+        if (!Number.isFinite(scheduledAt) || scheduledAt > now) continue;
+        if (!userSettings.telegramBotToken || !userSettings.telegramChatId) {
+          post.status = "error";
+          post.state = statusLabel(post.status);
+          post.lastError = "Telegram не настроен";
+          changed = true;
+          continue;
+        }
+
+        const media = Array.isArray(user.workspace?.media)
+          ? user.workspace.media.find((item) => item.id && item.id === post.mediaId)
+          : null;
+        const mediaUrl = absoluteMediaUrl(req, post.mediaUrl || media?.url);
+        const mediaType = String(post.mediaType || media?.type || "");
+        const text = [post.title, "", post.body, "", post.tags].filter(Boolean).join("\n").trim();
+        const textLimit = mediaUrl ? 1024 : 4096;
+        if (!text || text.length > textLimit) {
+          post.status = "error";
+          post.state = statusLabel(post.status);
+          post.lastError = !text
+            ? "Пустой текст публикации"
+            : `Текст длиннее лимита Telegram: ${text.length} из ${textLimit} знаков`;
+          changed = true;
+          continue;
+        }
+
+        const claimId = crypto.randomUUID();
+        post.status = "publishing";
+        post.state = statusLabel(post.status);
+        post.claimId = claimId;
+        post.claimExpiresAt = now + 15 * 60 * 1000;
+        post.lastError = "";
+        changed = true;
+
+        jobs.push({
+          claimId,
+          userId: user.id,
+          postId: String(post.id),
+          botToken: userSettings.telegramBotToken,
+          chatId: userSettings.telegramChatId,
+          text,
+          mediaUrl,
+          mediaType
+        });
+      }
+
+      syncQueueToWorkspace(user, queue);
+    }
+
+    if (changed) saveStore(store);
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    res.json({ ok: true, jobs });
+  } catch (error) {
+    console.error("[Scheduler Claim]", error);
+    res.status(500).json({ error: "Не удалось получить очередь Telegram" });
+  }
+});
+
+app.post("/api/scheduler/telegram/complete", requireGithubScheduler, (req, res) => {
+  try {
+    const {
+      userId,
+      postId,
+      claimId,
+      ok,
+      messageId,
+      error: publishError
+    } = req.body || {};
+    const store = loadStore();
+    const user = store.users.find((item) => item.id === userId);
+    const queue = user
+      ? Array.isArray(user.queue)
+        ? user.queue
+        : Array.isArray(user.workspace?.queue)
+          ? user.workspace.queue
+          : []
+      : [];
+    const post = queue.find((item) => String(item.id) === String(postId));
+
+    if (!user || !post || !claimId || post.claimId !== claimId) {
+      return res.status(409).json({ error: "Задание устарело или уже завершено" });
+    }
+
+    post.claimId = "";
+    post.claimExpiresAt = 0;
+    if (ok) {
+      post.status = "published";
+      post.state = statusLabel(post.status);
+      post.publishedAt = new Date().toISOString();
+      post.telegramMessageId = messageId || "";
+      post.lastError = "";
+      post.publishAttempts = Number(post.publishAttempts || 0) + 1;
+    } else {
+      const attempts = Number(post.publishAttempts || 0) + 1;
+      post.publishAttempts = attempts;
+      post.lastError = cleanText(publishError || "Ошибка Telegram", 500);
+      if (attempts < 3) {
+        post.status = "scheduled";
+        post.state = statusLabel(post.status);
+        post.scheduledAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      } else {
+        post.status = "error";
+        post.state = statusLabel(post.status);
+      }
+    }
+
+    syncQueueToWorkspace(user, queue);
+    saveStore(store);
+    res.json({ ok: true, status: post.status });
+  } catch (error) {
+    console.error("[Scheduler Complete]", error);
+    res.status(500).json({ error: "Не удалось сохранить результат публикации" });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────
 // INSTAGRAM PUBLISHING
 // ─────────────────────────────────────────────────────────────
@@ -2963,14 +3239,18 @@ async function runScheduledPublishing() {
 
       for (const post of queue) {
         if (!post.status) post.status = post.state === "Опубликовано" ? "published" : "scheduled";
-        const platform = post.platform || "dzen";
-
-        if (platform === "dzen" && post.status === "scheduled") {
-          post.status = "ready";
+        if (post.platform === "dzen") {
+          post.contentFormat = "dzen";
+          post.platform = "telegram";
+          if (post.status === "ready") post.status = "scheduled";
           post.state = statusLabel(post.status);
           changed = true;
-          continue;
         }
+        const platform = post.platform || "telegram";
+
+        // Telegram обрабатывает внешний GitHub Actions worker. Он нужен потому,
+        // что Timeweb блокирует исходящее соединение к Telegram API.
+        if (platform === "telegram") continue;
 
         if (post.status !== "scheduled" || !post.scheduledAt) continue;
         const postTime = new Date(post.scheduledAt);
@@ -2979,15 +3259,7 @@ async function runScheduledPublishing() {
         const userSettings = getUserSettingsForServer(user);
 
         try {
-          if (platform === "telegram") {
-            const { telegramBotToken, telegramChatId } = userSettings;
-            if (!telegramBotToken || !telegramChatId) { post.status = "error"; post.lastError = "Telegram не настроен"; changed = true; continue; }
-
-            const text = [post.title, "", post.body, "", post.tags].filter(Boolean).join("\n").slice(0, 4096);
-            await telegramCall("sendMessage", { chat_id: telegramChatId, text }, telegramBotToken);
-            post.status = "published"; post.state = statusLabel(post.status); post.publishedAt = new Date().toISOString();
-
-          } else if (platform === "instagram") {
+          if (platform === "instagram") {
             const { instagramAccessToken, instagramUserId } = userSettings;
             if (!instagramAccessToken || !instagramUserId) { post.status = "error"; post.lastError = "Instagram не настроен"; changed = true; continue; }
             if (!post.mediaUrl || !post.mediaType?.startsWith("video/")) { post.status = "error"; post.lastError = "Нет видео для Instagram Reels"; changed = true; continue; }
@@ -3037,7 +3309,7 @@ async function runScheduledPublishing() {
       }
 
       if (changed) {
-        user.queue = queue;
+        syncQueueToWorkspace(user, queue);
       }
     }
 

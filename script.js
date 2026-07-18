@@ -3,7 +3,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const TOKEN_KEY = "cf_full_token_v2";
   const USER_KEY = "cf_full_user_v2";
   const STORE_KEY = "cf_ui_clean_state_v1";
-  const DZEN_EDITOR_URL = "https://dzen.ru/editor";
   const SECRET_FIELDS = ["openaiApiKey", "telegramBotToken"];
   const FOCUSABLE_SELECTOR = [
     "a[href]",
@@ -138,8 +137,8 @@ document.addEventListener("DOMContentLoaded", () => {
   ];
 
   const platforms = {
-    dzen: { name: "Яндекс Дзен", short: "SEO-статья / пост", icon: "DZ" },
-    telegram: { name: "Telegram", short: "инфо-пост / анонс", icon: "TG" }
+    dzen: { name: "Статья для Дзена", short: "публикация через Telegram", icon: "DZ" },
+    telegram: { name: "Пост для Telegram", short: "публикация через Telegram", icon: "TG" }
   };
 
   const contentTemplates = [
@@ -231,7 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
     planner: {
       publishDate: undefined,
       publishTime: undefined,
-      placement: "Дзен",
+      placement: "Telegram",
       goal: "получить заявку",
       reason: "",
       formatNote: ""
@@ -386,7 +385,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const isRegister = authMode === "register";
     el.authText.textContent = isRegister
       ? "Регистрация профиля в системе."
-      : "Подготовка и публикация статей в Дзене.";
+      : "Подготовка и публикация материалов в Telegram.";
     el.authSubmitBtn.textContent = isRegister ? "Зарегистрироваться" : "Войти";
     el.passwordInput.autocomplete = isRegister ? "new-password" : "current-password";
     document.querySelector("[data-auth-password-toggle]").innerHTML = icons.eye;
@@ -557,6 +556,11 @@ document.addEventListener("DOMContentLoaded", () => {
     date.setMinutes(date.getMinutes() > 30 ? 0 : 30, 0, 0);
     if (date.getMinutes() === 0) date.setHours(date.getHours() + 1);
     return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  }
+  function scheduledAtIso(date, time) {
+    if (!date || !time) return "";
+    const value = new Date(`${date}T${time}:00`);
+    return Number.isNaN(value.getTime()) ? "" : value.toISOString();
   }
   function ensurePlanner() {
     if (!state.planner) state.planner = clone(defaultState.planner);
@@ -756,7 +760,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const template = contentTemplates.find((item) => item.id === state.activeTemplateId);
     if (template) {
       state.activePlatform = template.platform;
-      ensurePlanner().placement = platforms[template.platform]?.name || "Дзен";
+      ensurePlanner().placement = "Telegram";
     }
   }
 
@@ -769,7 +773,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.settings.objective = template.goal;
     state.planner = {
       ...ensurePlanner(),
-      placement: platforms[template.platform]?.name || "Дзен",
+      placement: "Telegram",
       goal: template.goal,
       reason: template.tag,
       formatNote: template.formatNote
@@ -1229,6 +1233,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const content = selectedContent();
     const planner = ensurePlanner();
     const completion = getProjectCompletionPercentage(project);
+    const selectedMedia = state.media.find((item) => item.id === state.selectedMediaId);
+    const telegramLimit = selectedMedia ? 1024 : 4096;
+    const publicationLength = formatPublicationText({
+      title: content.headline,
+      body: content.body,
+      tags: content.tags
+    }).length;
 
     let criticHtml = "";
     if (state.critic) {
@@ -1287,7 +1298,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="row">
           <div>
             <h1 class="title-xl">Фабрика контента</h1>
-            <p class="text">Сборка материалов из коммерческого контекста в готовый пакет по шаблону.</p>
+            <p class="text">Готовь статьи и посты, затем публикуй их в Telegram сразу или по расписанию.</p>
           </div>
           <div class="inline-wrap inline-center gap-8">
             <span class="chip info chip-compact">📁 Проект выбран</span>
@@ -1340,7 +1351,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <button class="btn primary generate-button ${state.limitInfo && !state.limitInfo.isUnlimited && state.limitInfo.remaining < 1 ? 'is-disabled' : ''}" data-action="generate" ${state.limitInfo && !state.limitInfo.isUnlimited && state.limitInfo.remaining < 1 ? 'disabled' : ''}>
               ${state.limitInfo && !state.limitInfo.isUnlimited && state.limitInfo.remaining < 1
                 ? "Недостаточно лимитов (обновится завтра)"
-                : `${icons.spark} ${state.activePlatform === "dzen" ? "Сгенерировать статьи" : "Сгенерировать материалы"}`}
+                : `${icons.spark} Сгенерировать материалы`}
             </button>
             <button class="btn full-center" data-action="fill-brief-template">
               ${icons.file} Сделать бриф под этот формат
@@ -1366,6 +1377,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="panel">
             <div class="kicker">Шаг 03</div>
             <h2 class="title">Редактор</h2>
+            <p class="text mt-8">Выбери формат текста. Канал публикации всегда один — Telegram.</p>
             
             <div class="platforms mt-16">
               ${Object.keys(platforms).map(renderPlatform).join("")}
@@ -1393,6 +1405,12 @@ document.addEventListener("DOMContentLoaded", () => {
                   </details>
                 </label>
                 <label class="field"><span class="label">Теги</span><input class="input" data-action="edit-content" data-field="tags" value="${escapeHtml(content.tags)}" /></label>
+                <div class="publication-limit ${publicationLength > telegramLimit ? "is-over" : ""}" data-publication-limit>
+                  <span>Объём публикации: ${publicationLength} / ${telegramLimit} знаков</span>
+                  ${publicationLength > telegramLimit
+                    ? `<strong>${selectedMedia ? "С медиа Telegram допускает подпись до 1024 знаков." : "Сократи текст перед публикацией."}</strong>`
+                    : `<span>Готово для одного сообщения в Telegram</span>`}
+                </div>
                 <label class="field">
                   <span class="label">Медиа-файл</span>
                   <select class="select" data-action="select-media">
@@ -1402,7 +1420,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 </label>
               </div>
               <div class="actions mt-24">
-                <button class="btn primary" data-action="add-to-queue">${state.activePlatform === "dzen" ? "Подготовить к публикации" : "Поставить в очередь"}</button>
+                <button class="btn primary" data-action="publish-current-telegram">${icons.send} Опубликовать в Telegram</button>
+                <button class="btn" data-action="add-to-queue" data-schedule-button>Запланировать на ${escapeHtml(planner.publishDate)} в ${escapeHtml(planner.publishTime)}</button>
                 <button class="btn" data-action="generate-image">${icons.spark} Сгенерировать картинку</button>
                 <button class="btn" data-action="copy-current">${icons.copy} Копировать материал</button>
               </div>
@@ -1448,12 +1467,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return `
       <div class="panel">
         <div class="row">
-          <h1 class="title-xl">Очередь и публикация</h1>
+          <div>
+            <h1 class="title-xl">Telegram: очередь и публикация</h1>
+            <p class="text mt-8">Публикуй сразу или назначай дату и время. Автопроверка очереди выполняется каждые 5 минут.</p>
+          </div>
           <button class="btn danger" data-action="clear-queue">Очистить всю очередь</button>
         </div>
         <div class="auto-tight mt-24">
-          <div class="metric"><div class="metric-value">${stats.ready}</div><div class="metric-label">Готовы для Дзена</div></div>
-          <div class="metric"><div class="metric-value">${stats.scheduled}</div><div class="metric-label">Ожидают</div></div>
+          <div class="metric"><div class="metric-value">${stats.today}</div><div class="metric-label">На сегодня</div></div>
+          <div class="metric"><div class="metric-value">${stats.scheduled}</div><div class="metric-label">Ждут публикации</div></div>
           <div class="metric"><div class="metric-value">${stats.published}</div><div class="metric-label">Опубликовано</div></div>
           <div class="metric"><div class="metric-value">${stats.errors}</div><div class="metric-label">Ошибки</div></div>
         </div>
@@ -1510,9 +1532,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <div class="kanban-card-title">${escapeHtml(item.title)}</div>
               <div class="kanban-card-meta"><span class="chip ok">${escapeHtml(item.platform)}</span></div>
               <div class="inline-row gap-4 mt-8" data-stop-propagation>
-                ${item.platform === "dzen"
-                  ? `<button class="btn small primary" data-action="open-dzen" data-id="${escapeHtml(item.id)}">Открыть Дзен</button>`
-                  : `<button class="btn small green" data-action="publish-one" data-id="${escapeHtml(item.id)}">Опубликовать</button>`}
+                <button class="btn small green" data-action="publish-one" data-id="${escapeHtml(item.id)}">Опубликовать в Telegram</button>
                 <button class="btn small danger kanban-action" data-action="remove-queue" data-id="${escapeHtml(item.id)}">❌ Удалить</button>
               </div>
             </div>
@@ -1575,7 +1595,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return `
       <div class="panel">
         <h1 class="title-xl">Настройки</h1>
-        <p class="text">Конфигурация сервера и интеграций.</p>
+        <p class="text">Telegram — единственный канал публикации. Формат текста для Дзена выбирается в редакторе.</p>
       </div>
       <div class="auto">
         <div class="panel">
@@ -1589,10 +1609,14 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
         <div class="panel">
-          <h2 class="title">Telegram</h2>
+          <h2 class="title">Telegram · @motorports</h2>
           <div class="form mt-16">
             <label class="field"><span class="label">Bot Token</span><input class="input" type="password" data-action="setting-input" name="telegramBotToken" value="${escapeHtml(s.telegramBotToken)}" /></label>
             <label class="field"><span class="label">Chat ID</span><input class="input" data-action="setting-input" name="telegramChatId" value="${escapeHtml(s.telegramChatId)}" /></label>
+            <div class="metric p-12">
+              <div class="metric-label">Публикация по расписанию</div>
+              <div class="metric-value fs-16">${s.telegramReady ? "Готова · проверка каждые 5 минут" : "Сначала сохрани Bot Token и Chat ID"}</div>
+            </div>
             <button class="btn primary" data-action="save-server-config">Сохранить</button>
           </div>
         </div>
@@ -1661,26 +1685,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderQueueCard(item) {
-    const platformName = platforms[item.platform]?.name || item.platform;
+    const contentFormat = item.contentFormat || (item.platform === "dzen" ? "dzen" : "telegram");
+    const platformName = platforms[contentFormat]?.name || "Материал";
     const isPublished = item.status === "published";
     return `
       <div class="queue-card">
         <div class="row m-0">
           <div>
             <div class="item-title">${escapeHtml(item.title)}</div>
-            <div class="item-sub">${[item.publishDate, item.publishTime].filter(Boolean).map(escapeHtml).join(" ") || "Без даты"} | ${escapeHtml(platformName)}</div>
+            <div class="item-sub">${[item.publishDate, item.publishTime].filter(Boolean).map(escapeHtml).join(" ") || "Без даты"} | ${escapeHtml(platformName)} → Telegram</div>
           </div>
           <span class="chip ${isPublished ? 'ok' : item.status === 'error' ? 'bad' : 'info'}">${escapeHtml(item.state)}</span>
         </div>
         <div class="text-mono my-12">${escapeHtml(shorten(item.body, 100))}</div>
         <div class="actions">
           <button class="btn small" data-action="open-queue" data-id="${escapeHtml(item.id)}">Редактировать</button>
-          ${item.platform === "dzen" && !isPublished
-            ? `<button class="btn primary small" data-action="open-dzen" data-id="${escapeHtml(item.id)}">Скопировать и открыть Дзен</button>
-               <button class="btn green small" data-action="mark-published" data-id="${escapeHtml(item.id)}">Отметить опубликованной</button>`
-            : ""}
-          ${item.platform !== "dzen" && !isPublished
-            ? `<button class="btn green small" data-action="publish-one" data-id="${escapeHtml(item.id)}">Отправить сейчас</button>`
+          ${!isPublished
+            ? `<button class="btn green small" data-action="publish-one" data-id="${escapeHtml(item.id)}">Опубликовать в Telegram</button>`
             : ""}
           <button class="btn danger small" data-action="remove-queue" data-id="${escapeHtml(item.id)}">Удалить</button>
         </div>
@@ -1717,23 +1738,24 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (target === 'scheduled' && type === 'idea') {
         const idea = state.ideas.find(i => i.id === id);
         if (idea) {
-          const platform = state.activePlatform || "dzen";
-          if (!confirmDzenReadiness(platform)) return;
-          const content = idea.formats?.[platform] || {};
-          const isDzen = platform === "dzen";
+          const contentFormat = state.activePlatform || "dzen";
+          if (!confirmDzenReadiness(contentFormat)) return;
+          const content = idea.formats?.[contentFormat] || {};
+          const publishDate = todayInputValue();
+          const publishTime = nextHourInputValue();
           state.queue.push({
             id: uid('q'), title: content.headline || idea.title, body: content.body || idea.title,
-            tags: '', publishDate: todayInputValue(), publishTime: nextHourInputValue(),
-            scheduledAt: `${todayInputValue()}T${nextHourInputValue()}`, platform,
-            status: isDzen ? "ready" : "scheduled",
-            state: isDzen ? "Готово к публикации" : "Запланировано"
+            tags: '', publishDate, publishTime,
+            scheduledAt: scheduledAtIso(publishDate, publishTime),
+            platform: "telegram",
+            contentFormat,
+            status: "scheduled",
+            state: "Запланировано"
           });
           saveState(); render(); showToast("В очереди!");
         }
       } else if (target === 'published' && type === 'scheduled') {
-        const post = state.queue.find(item => item.id === id);
-        if (post?.platform === "dzen") markPublished(id);
-        else publishOne(id);
+        publishOne(id);
       }
     } catch {
       showToast("Не удалось переместить карточку");
@@ -1903,30 +1925,124 @@ document.addEventListener("DOMContentLoaded", () => {
     return false;
   }
 
-  async function addToQueue() {
-    const c = selectedContent(); if (!c.body) return;
-    const p = ensurePlanner();
-    const media = state.media.find((m) => m.id === state.selectedMediaId);
-    const isDzen = state.activePlatform === "dzen";
-    if (!confirmDzenReadiness(state.activePlatform)) return;
-    state.queue.unshift({ id: uid("q"), projectId: state.activeProjectId, platform: state.activePlatform, title: c.headline, body: c.body, tags: c.tags, mediaId: state.selectedMediaId || "", mediaUrl: media?.url || "", mediaType: media?.type || "", status: isDzen ? "ready" : "scheduled", state: isDzen ? "Готово к публикации" : "Запланировано", publishDate: p.publishDate, publishTime: p.publishTime, scheduledAt: `${p.publishDate}T${p.publishTime}` });
-    state.activeTab = "queue"; render(); scrollToTop(); showToast(isDzen ? "Статья готова к публикации" : "Добавлено в очередь");
-    pushWorkspace();
+  function makeTelegramQueuePost(status = "scheduled") {
+    const content = selectedContent();
+    const planner = ensurePlanner();
+    const media = state.media.find((item) => item.id === state.selectedMediaId);
+    return {
+      id: uid("q"),
+      projectId: state.activeProjectId,
+      platform: "telegram",
+      contentFormat: state.activePlatform,
+      title: content.headline,
+      body: content.body,
+      tags: content.tags,
+      mediaId: state.selectedMediaId || "",
+      mediaUrl: media?.url || "",
+      mediaType: media?.type || "",
+      status,
+      state: status === "published" ? "Опубликовано" : status === "publishing" ? "Публикуется" : "Запланировано",
+      publishDate: planner.publishDate,
+      publishTime: planner.publishTime,
+      scheduledAt: scheduledAtIso(planner.publishDate, planner.publishTime)
+    };
   }
+
+  function validateTelegramPost(post, media) {
+    const text = formatPublicationText(post);
+    if (!text) throw new Error("Сначала подготовь текст публикации.");
+    const limit = media?.url ? 1024 : 4096;
+    if (text.length > limit) {
+      throw new Error(
+        media?.url
+          ? `С медиа можно опубликовать до 1024 знаков. Сейчас ${text.length}. Сократи текст или убери файл.`
+          : `В одном сообщении Telegram помещается до 4096 знаков. Сейчас ${text.length}. Сократи текст.`
+      );
+    }
+    return text;
+  }
+
+  function updatePublicationLimit() {
+    const element = document.querySelector("[data-publication-limit]");
+    if (!element) return;
+    const content = selectedContent();
+    const media = state.media.find((item) => item.id === state.selectedMediaId);
+    const limit = media ? 1024 : 4096;
+    const length = formatPublicationText({
+      title: content.headline,
+      body: content.body,
+      tags: content.tags
+    }).length;
+    element.classList.toggle("is-over", length > limit);
+    element.innerHTML = `
+      <span>Объём публикации: ${length} / ${limit} знаков</span>
+      ${length > limit
+        ? `<strong>${media ? "С медиа Telegram допускает подпись до 1024 знаков." : "Сократи текст перед публикацией."}</strong>`
+        : `<span>Готово для одного сообщения в Telegram</span>`}
+    `;
+  }
+
+  function updateScheduleButton() {
+    const button = document.querySelector("[data-schedule-button]");
+    if (!button) return;
+    const planner = ensurePlanner();
+    button.textContent = `Запланировать на ${planner.publishDate} в ${planner.publishTime}`;
+  }
+
+  async function addToQueue() {
+    if (!selectedIdea()) {
+      showToast("Сначала сгенерируй или выбери материал.");
+      return;
+    }
+    if (!confirmDzenReadiness(state.activePlatform)) return;
+    const post = makeTelegramQueuePost("scheduled");
+    const media = state.media.find((item) => item.id === post.mediaId);
+    try {
+      validateTelegramPost(post, media);
+      if (!post.scheduledAt || new Date(post.scheduledAt).getTime() < Date.now() - 60000) {
+        throw new Error("Выбери дату и время публикации не раньше текущего времени.");
+      }
+    } catch (error) {
+      showToast(error.message);
+      return;
+    }
+
+    state.queue.unshift(post);
+    state.activeTab = "queue";
+    render();
+    scrollToTop();
+    showToast(`Запланировано на ${post.publishDate} в ${post.publishTime}`);
+    await pushWorkspace();
+  }
+
+  async function publishCurrentTelegram() {
+    if (!selectedIdea()) {
+      showToast("Сначала сгенерируй или выбери материал.");
+      return;
+    }
+    if (!confirmDzenReadiness(state.activePlatform)) return;
+    const post = makeTelegramQueuePost("publishing");
+    state.queue.unshift(post);
+    state.activeTab = "queue";
+    render();
+    scrollToTop();
+    await publishOne(post.id);
+  }
+
   async function publishTelegramFromBrowser(post, media) {
     const config = await request("/api/telegram/browser-config", { method: "POST" });
-    const text = formatPublicationText(post);
+    const text = validateTelegramPost(post, media);
     const isImage = Boolean(media?.type?.startsWith("image/"));
     const method = media?.url ? (isImage ? "sendPhoto" : "sendVideo") : "sendMessage";
     const payload = media?.url
       ? {
           chat_id: config.chatId,
           [isImage ? "photo" : "video"]: new URL(media.url, window.location.origin).href,
-          caption: text.slice(0, 1024)
+          caption: text
         }
       : {
           chat_id: config.chatId,
-          text: text.slice(0, 4096)
+          text
         };
 
     const controller = new AbortController();
@@ -1959,65 +2075,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function publishOne(id) {
     const post = state.queue.find(q => q.id === id); if (!post) return;
-    if (post.platform === "dzen") {
-      await openDzenDraft(id);
-      return;
-    }
-    post.state = "Публикуется"; render();
+    post.platform = "telegram";
+    post.contentFormat = post.contentFormat || "telegram";
+    post.status = "publishing";
+    post.state = "Публикуется";
+    post.claimId = "browser";
+    post.claimExpiresAt = Date.now() + 2 * 60 * 1000;
+    render();
+    await pushWorkspace();
     try {
       const media = state.media.find((m) => m.id === post.mediaId);
       const mediaPayload = media ? { url: media.url, type: media.type } : null;
-      if (post.platform === "telegram") {
-        await publishTelegramFromBrowser(post, mediaPayload);
-      } else {
-        await request("/api/publish/" + post.platform, { method: "POST", body: { post, media: mediaPayload } });
-      }
-      post.status = "published"; post.state = "Опубликовано"; showToast("Опубликовано");
-      pushWorkspace();
+      const result = await publishTelegramFromBrowser(post, mediaPayload);
+      post.status = "published";
+      post.state = "Опубликовано";
+      post.publishedAt = new Date().toISOString();
+      post.telegramMessageId = result?.result?.message_id || "";
+      post.lastError = "";
+      showToast("Опубликовано в Telegram");
     } catch (e) {
       post.status = "error";
       post.state = "Ошибка";
+      post.lastError = cleanError(e.message);
       showToast(cleanError(e.message));
     } finally {
+      post.claimId = "";
+      post.claimExpiresAt = 0;
+      await pushWorkspace();
       render();
     }
   }
 
   function formatPublicationText(post) {
     return [post.title, "", post.body, "", post.tags].filter(Boolean).join("\n").trim();
-  }
-
-  async function openDzenDraft(id) {
-    const post = state.queue.find(q => q.id === id);
-    if (!post) return;
-
-    const editorTab = window.open(DZEN_EDITOR_URL, "_blank");
-    if (editorTab) editorTab.opener = null;
-    const copied = await copyText(formatPublicationText(post), false);
-    post.status = "ready";
-    post.state = copied ? "Скопировано — вставь в Дзен" : "Готово к публикации";
-    post.copiedAt = copied ? new Date().toISOString() : "";
-    saveState();
-    pushWorkspace();
-    render();
-
-    if (!editorTab) {
-      showToast(copied ? "Текст скопирован. Разреши открытие вкладок для Дзена." : "Не удалось открыть Дзен и скопировать текст.");
-    } else {
-      showToast(copied ? "Статья скопирована. Вставь её в редактор Дзена." : "Дзен открыт, но текст не скопирован.");
-    }
-  }
-
-  function markPublished(id) {
-    const post = state.queue.find(q => q.id === id);
-    if (!post) return;
-    post.status = "published";
-    post.state = "Опубликовано";
-    post.publishedAt = new Date().toISOString();
-    saveState();
-    pushWorkspace();
-    render();
-    showToast("Отмечено как опубликованное");
   }
 
   async function generateImage() {
@@ -2053,24 +2143,27 @@ document.addEventListener("DOMContentLoaded", () => {
         
         <div class="auto-tight">
           <label class="field">
-            <span class="label">Площадка</span>
-            <select class="select" id="editQPlatform">
-              <option value="dzen" ${p.platform === "dzen" ? "selected" : ""}>Дзен</option>
-              <option value="telegram" ${p.platform === "telegram" ? "selected" : ""}>Telegram</option>
-              <option value="instagram" ${p.platform === "instagram" ? "selected" : ""}>Instagram Reels</option>
-              <option value="youtube" ${p.platform === "youtube" ? "selected" : ""}>YouTube Shorts</option>
+            <span class="label">Формат материала</span>
+            <select class="select" id="editQContentFormat">
+              <option value="dzen" ${(p.contentFormat || (p.platform === "dzen" ? "dzen" : "")) === "dzen" ? "selected" : ""}>Статья для Дзена</option>
+              <option value="telegram" ${(p.contentFormat || p.platform) === "telegram" ? "selected" : ""}>Пост для Telegram</option>
             </select>
           </label>
           
           <label class="field">
             <span class="label">Статус</span>
             <select class="select" id="editQStatus">
-              <option value="ready" ${p.status === "ready" ? "selected" : ""}>Готово к публикации</option>
               <option value="scheduled" ${p.status === "scheduled" ? "selected" : ""}>Запланировано</option>
+              <option value="publishing" ${p.status === "publishing" ? "selected" : ""}>Публикуется</option>
               <option value="published" ${p.status === "published" ? "selected" : ""}>Опубликовано</option>
               <option value="error" ${p.status === "error" ? "selected" : ""}>Ошибка</option>
             </select>
           </label>
+        </div>
+
+        <div class="metric p-12">
+          <div class="metric-label">Канал публикации</div>
+          <div class="metric-value fs-16">Telegram · @motorports</div>
         </div>
 
         <div class="auto-tight">
@@ -2085,6 +2178,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </select>
         </label>
 
+        ${p.lastError ? `<div class="log bad"><div class="log-text">${escapeHtml(p.lastError)}</div></div>` : ""}
         <button class="btn primary mt-16" data-action="save-queue" data-id="${p.id}">Сохранить изменения</button>
       </div></div></div></div>
     `);
@@ -2134,6 +2228,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (a === "add-to-queue") { addToQueue(); return; }
+    if (a === "publish-current-telegram") { publishCurrentTelegram(); return; }
     if (a === "remove-queue") {
       if (confirm("Вы действительно хотите удалить эту публикацию из очереди?")) {
         state.queue = state.queue.filter(q => q.id !== t.dataset.id);
@@ -2149,28 +2244,32 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (a === "publish-one") { publishOne(t.dataset.id); return; }
-    if (a === "open-dzen") { openDzenDraft(t.dataset.id); return; }
-    if (a === "mark-published") { markPublished(t.dataset.id); return; }
     if (a === "open-queue") { openQueueModal(t.dataset.id); return; }
     if (a === "save-queue") {
       const p = state.queue.find(q => q.id === t.dataset.id);
       if (p) {
         p.title = document.getElementById("editQTitle").value;
         p.body = document.getElementById("editQBody").value;
-        p.platform = document.getElementById("editQPlatform").value;
+        p.platform = "telegram";
+        p.contentFormat = document.getElementById("editQContentFormat").value;
         p.status = document.getElementById("editQStatus").value;
         p.state = p.status === "published"
           ? "Опубликовано"
           : p.status === "error"
             ? "Ошибка"
-            : p.status === "ready"
-              ? "Готово к публикации"
+            : p.status === "publishing"
+              ? "Публикуется"
               : "Запланировано";
         p.publishDate = document.getElementById("editQDate").value;
         p.publishTime = document.getElementById("editQTime").value;
-        p.scheduledAt = `${p.publishDate}T${p.publishTime}`;
+        p.scheduledAt = scheduledAtIso(p.publishDate, p.publishTime);
         p.mediaId = document.getElementById("editQMediaId").value || "";
+        const media = state.media.find((item) => item.id === p.mediaId);
+        p.mediaUrl = media?.url || "";
+        p.mediaType = media?.type || "";
+        p.lastError = "";
         saveState();
+        pushWorkspace();
       }
       el.modalRoot.innerHTML = ""; render(); return;
     }
@@ -2239,22 +2338,22 @@ document.addEventListener("DOMContentLoaded", () => {
       const idea = state.ideas.find(i => i.id === t.dataset.id);
       if (idea) {
         const p = ensurePlanner();
-        const platform = state.activePlatform || "dzen";
-        if (!confirmDzenReadiness(platform)) return;
-        const isDzen = platform === "dzen";
+        const contentFormat = state.activePlatform || "dzen";
+        if (!confirmDzenReadiness(contentFormat)) return;
         state.queue.unshift({
           id: uid("q"),
           projectId: state.activeProjectId,
-          platform,
+          platform: "telegram",
+          contentFormat,
           title: idea.title,
-          body: idea.formats?.[platform]?.body || idea.title,
-          tags: idea.formats?.[platform]?.tags || "",
+          body: idea.formats?.[contentFormat]?.body || idea.title,
+          tags: idea.formats?.[contentFormat]?.tags || "",
           mediaId: state.selectedMediaId || "",
-          status: isDzen ? "ready" : "scheduled",
-          state: isDzen ? "Готово к публикации" : "Запланировано",
+          status: "scheduled",
+          state: "Запланировано",
           publishDate: p.publishDate,
           publishTime: p.publishTime,
-          scheduledAt: `${p.publishDate}T${p.publishTime}`
+          scheduledAt: scheduledAtIso(p.publishDate, p.publishTime)
         });
         saveState();
         render();
@@ -2317,7 +2416,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const t = e.target;
     if (t.matches('[data-action="project-input"]')) { activeProject()[t.name] = t.value; saveState(); }
     if (t.matches('[data-action="setting-input"]')) { state.settings[t.name] = t.value; saveState(); }
-    if (t.matches('[data-action="planner-input"]')) { ensurePlanner()[t.name] = t.value; saveState(); }
+    if (t.matches('[data-action="planner-input"]')) { ensurePlanner()[t.name] = t.value; saveState(); updateScheduleButton(); }
     if (t.matches('[data-action="edit-content"]')) {
       const idea = selectedIdea(); if (!idea) return;
       if (!idea.formats) idea.formats = {};
@@ -2325,6 +2424,7 @@ document.addEventListener("DOMContentLoaded", () => {
       idea.formats[state.activePlatform][t.dataset.field] = t.value;
       if (t.dataset.field === "headline") idea.title = t.value;
       saveState();
+      updatePublicationLimit();
     }
   });
 
@@ -2332,7 +2432,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const t = e.target;
     if (t.matches('[data-action="apply-template-select"]')) { applyTemplateById(t.value); render(); }
     if (t.matches('[data-action="setting-input"]')) { state.settings[t.name] = t.value; saveState(); scheduleWorkspaceSave(); }
-    if (t.matches('[data-action="select-media"]')) { state.selectedMediaId = t.value; saveState(); }
+    if (t.matches('[data-action="select-media"]')) { state.selectedMediaId = t.value; saveState(); render(); }
     if (t.matches('[data-action="sidebar-select-project"]')) { state.activeProjectId = t.value; render(); }
   });
 });
