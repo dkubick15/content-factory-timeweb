@@ -41,10 +41,10 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-18-plain-text-media-prompts-v26";
+const APP_BUILD = "2026-07-18-plain-text-media-prompts-v27";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
-  || "https://motorports-telegram-relay.accessible-visitor.workers.dev"
+  || "https://motorports-telegram-relay.camp-mustang.workers.dev"
 ).replace(/\/+$/, "");
 const TELEGRAM_EXTERNAL_SCHEDULER = process.env.TELEGRAM_EXTERNAL_SCHEDULER !== "false";
 
