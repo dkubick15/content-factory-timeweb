@@ -33,7 +33,6 @@
 {
   "telegramBotToken": "...",
   "telegramChatId": "@channel",
-  "telegramRelayToken": "...",
   "instagramAccessToken": "...",
   "instagramUserId": "123456789"
 }

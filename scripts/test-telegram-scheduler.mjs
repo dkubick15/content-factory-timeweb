@@ -10,7 +10,6 @@ const APP_PORT = 19190;
 const RELAY_PORT = 19191;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const BOT_TOKEN = "test-bot-token";
-const RELAY_TOKEN = "test-relay-access";
 const requests = [];
 
 function wait(ms) {
@@ -45,7 +44,6 @@ const relay = http.createServer((req, res) => {
       .digest("hex");
 
     assert.equal(req.url, "/api/publish");
-    assert.equal(req.headers["oai-sites-authorization"], `Bearer ${RELAY_TOKEN}`);
     assert.equal(signature, expected);
 
     const payload = JSON.parse(body);
@@ -73,7 +71,6 @@ const app = spawn(process.execPath, ["server.js"], {
     DEMO_EMAIL: "kubik",
     DEMO_PASSWORD: "kubik",
     TELEGRAM_RELAY_URL: `http://127.0.0.1:${RELAY_PORT}`,
-    TELEGRAM_RELAY_SIWC_TOKEN: RELAY_TOKEN,
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     TELEGRAM_CHAT_ID: "@test-channel",
     SCHEDULER_INTERVAL_MS: "1000",

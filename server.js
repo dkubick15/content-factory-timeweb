@@ -41,7 +41,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-18-telegram-first-relay-v21";
+const APP_BUILD = "2026-07-18-telegram-first-relay-v22";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -572,7 +572,6 @@ function validateConfigBody(body = {}) {
   const allowed = {
     telegramBotToken: 120,
     telegramChatId: 160,
-    telegramRelayToken: 300,
     instagramAccessToken: 600,
     instagramUserId: 160
   };
@@ -672,7 +671,6 @@ function defaultUserSettings() {
     model: DEFAULT_AI_MODEL,
     telegramBotTokenEnc: "",
     telegramChatId: "",
-    telegramRelayTokenEnc: "",
     // Instagram Graph API
     instagramAccessTokenEnc: "",
     instagramUserId: "",
@@ -697,7 +695,6 @@ function getUserSettingsForServer(user) {
     model: settings.model || DEFAULT_AI_MODEL,
     telegramBotToken: decryptSecret(settings.telegramBotTokenEnc) || process.env.TELEGRAM_BOT_TOKEN || "",
     telegramChatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID || "",
-    telegramRelayToken: decryptSecret(settings.telegramRelayTokenEnc) || process.env.TELEGRAM_RELAY_SIWC_TOKEN || "",
     instagramAccessToken: decryptSecret(settings.instagramAccessTokenEnc) || "",
     instagramUserId: settings.instagramUserId || "",
     youtubeRefreshToken: decryptSecret(settings.youtubeRefreshTokenEnc) || "",
@@ -719,7 +716,6 @@ function getUserSettingsForClient(user) {
     model: serverSettings.model,
     telegramBotToken: maskKey(serverSettings.telegramBotToken),
     telegramChatId: serverSettings.telegramChatId,
-    telegramRelayReady: Boolean(serverSettings.telegramRelayToken),
     instagramAccessToken: maskKey(serverSettings.instagramAccessToken),
     instagramUserId: serverSettings.instagramUserId,
     instagramReady: Boolean(serverSettings.instagramAccessToken && serverSettings.instagramUserId),
@@ -1645,11 +1641,7 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
 
 app.get("/api/config", requireAuth, (req, res) => {
   const settings = getUserSettingsForClient(req.workspaceUser);
-  const telegramSchedulerReady = Boolean(
-    settings.telegramBotToken
-    && settings.telegramChatId
-    && settings.telegramRelayReady
-  );
+  const telegramSchedulerReady = Boolean(settings.telegramBotToken && settings.telegramChatId);
 
   res.json({
     ok: true,
@@ -1740,7 +1732,6 @@ app.post("/api/config", requireAuth, (req, res) => {
   const {
     telegramBotToken,
     telegramChatId,
-    telegramRelayToken,
     instagramAccessToken,
     instagramUserId
   } = validateConfigBody(req.body || {});
@@ -1763,14 +1754,6 @@ app.post("/api/config", requireAuth, (req, res) => {
       user.settings.telegramChatId = String(telegramChatId || "").trim();
     }
 
-    if (telegramRelayToken !== undefined) {
-      const trimmed = String(telegramRelayToken).trim();
-      const isMasked = trimmed.includes("...") || trimmed.includes("***");
-      if (!(isMasked && user.settings.telegramRelayTokenEnc)) {
-        user.settings.telegramRelayTokenEnc = encryptSecret(trimmed);
-      }
-    }
-
     if (instagramAccessToken !== undefined) {
       const trimmed = String(instagramAccessToken).trim();
       const isMasked = trimmed.includes("...") || trimmed.includes("***");
@@ -1787,11 +1770,7 @@ app.post("/api/config", requireAuth, (req, res) => {
     saveStore(req.store);
 
     const settings = getUserSettingsForClient(user);
-    const telegramSchedulerReady = Boolean(
-      settings.telegramBotToken
-      && settings.telegramChatId
-      && settings.telegramRelayReady
-    );
+    const telegramSchedulerReady = Boolean(settings.telegramBotToken && settings.telegramChatId);
     res.json({
       ok: true,
       user: getPublicUser(req.user),
@@ -2550,9 +2529,9 @@ function validateTelegramPayload(text, mediaUrl = "") {
   }
 }
 
-async function telegramRelayCall(payload, botToken, relayToken) {
+async function telegramRelayCall(payload, botToken) {
   if (!TELEGRAM_RELAY_URL) throw new Error("Telegram-ретранслятор не настроен.");
-  if (!botToken || !relayToken) throw new Error("Не настроена защищённая публикация Telegram.");
+  if (!botToken) throw new Error("Не настроена защищённая публикация Telegram.");
 
   const body = JSON.stringify(payload);
   const timestamp = Date.now().toString();
@@ -2566,9 +2545,10 @@ async function telegramRelayCall(payload, botToken, relayToken) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "ContentFactoryTelegramRelay/1.0",
         "X-Relay-Timestamp": timestamp,
-        "X-Relay-Signature": signature,
-        "OAI-Sites-Authorization": `Bearer ${relayToken}`
+        "X-Relay-Signature": signature
       },
       body
     }),
@@ -2587,11 +2567,10 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
     const userSettings = getUserSettingsForServer(req.workspaceUser);
     const botToken = userSettings.telegramBotToken;
     const chatId = userSettings.telegramChatId;
-    const relayToken = userSettings.telegramRelayToken;
 
-    if (!botToken || !chatId || !relayToken) {
+    if (!botToken || !chatId) {
       return res.status(400).json({
-        error: "Telegram настроен не полностью. Сохрани Bot Token, Chat ID и защищённый ретранслятор."
+        error: "Telegram настроен не полностью. Сохрани Bot Token и Chat ID."
       });
     }
 
@@ -2609,7 +2588,7 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
       text,
       mediaUrl,
       mediaType: String(media?.type || "")
-    }, botToken, relayToken);
+    }, botToken);
 
     const storedUser = req.store.users.find((item) => item.id === req.workspaceUser.id);
     if (storedUser && post.id) {
@@ -2990,10 +2969,9 @@ async function runScheduledPublishing() {
           if (platform === "telegram") {
             const {
               telegramBotToken,
-              telegramChatId,
-              telegramRelayToken
+              telegramChatId
             } = userSettings;
-            if (!telegramBotToken || !telegramChatId || !telegramRelayToken) {
+            if (!telegramBotToken || !telegramChatId) {
               post.status = "error";
               post.state = statusLabel(post.status);
               post.lastError = "Telegram настроен не полностью";
@@ -3024,7 +3002,7 @@ async function runScheduledPublishing() {
               text,
               mediaUrl,
               mediaType
-            }, telegramBotToken, telegramRelayToken);
+            }, telegramBotToken);
 
             post.status = "published";
             post.state = statusLabel(post.status);

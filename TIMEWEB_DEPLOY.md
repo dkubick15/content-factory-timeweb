@@ -50,7 +50,6 @@ TIMEWEB_AGENT_ID=id-вашего-созданного-агента
 
 # Telegram-first публикация
 TELEGRAM_RELAY_URL=https://адрес-защищенного-ретранслятора
-TELEGRAM_RELAY_SIWC_TOKEN=секрет-доступа-к-ретранслятору
 TELEGRAM_BOT_TOKEN=токен-бота
 TELEGRAM_CHAT_ID=@имя_канала
 ```
