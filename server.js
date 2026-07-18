@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-chatgpt-oauth-csp-v31";
+const APP_BUILD = "2026-07-19-chatgpt-oauth-callback-v32";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.camp-mustang.workers.dev"
@@ -213,10 +213,9 @@ app.use(helmet({
       fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
-      // ChatGPT может открыть OAuth-страницу в изолированном контексте с
-      // opaque origin. В таком окне CSP 'self' не совпадает даже с нашим
-      // собственным URL, поэтому разрешаем точный production origin явно.
-      formAction: ["'self'", oauthFormActionOrigin],
+      // Разрешаем отправку формы на наш OAuth endpoint и последующий
+      // официальный redirect ChatGPT после успешного входа.
+      formAction: ["'self'", oauthFormActionOrigin, "https://chatgpt.com"],
       frameAncestors: ["'none'"],
       upgradeInsecureRequests: null
     }
