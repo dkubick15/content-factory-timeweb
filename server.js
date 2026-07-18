@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-18-chatgpt-text-image-bridge-v29";
+const APP_BUILD = "2026-07-19-chatgpt-oauth-stability-v30";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.camp-mustang.workers.dev"
@@ -228,7 +228,30 @@ const authLimiter = rateLimit({
   limit: AUTH_RATE_LIMIT_MAX,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
   message: { error: "Слишком много попыток входа. Подожди немного и попробуй снова." }
+});
+
+const oauthAuthorizeLimiter = rateLimit({
+  windowMs: AUTH_RATE_LIMIT_WINDOW_MS,
+  limit: AUTH_RATE_LIMIT_MAX,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: {
+    error: "Слишком много неудачных попыток подключения. Подожди немного и попробуй снова."
+  }
+});
+
+const oauthTokenLimiter = rateLimit({
+  windowMs: AUTH_RATE_LIMIT_WINDOW_MS,
+  limit: Math.max(AUTH_RATE_LIMIT_MAX * 6, 120),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: {
+    error: "Слишком много неудачных обменов OAuth-токена. Запусти подключение заново."
+  }
 });
 
 const aiLimiter = rateLimit({
@@ -315,10 +338,13 @@ function baseUrlFromRequest(req) {
 
 function loadStore() {
   try {
-    if (!fs.existsSync(usersFile)) return { users: [] };
+    if (!fs.existsSync(usersFile)) return { users: [], oauthCodes: [] };
     const raw = fs.readFileSync(usersFile, "utf8");
     const data = JSON.parse(raw || "{}");
-    return { users: Array.isArray(data.users) ? data.users : [] };
+    return {
+      users: Array.isArray(data.users) ? data.users : [],
+      oauthCodes: Array.isArray(data.oauthCodes) ? data.oauthCodes : []
+    };
   } catch (error) {
     console.error("Ошибка чтения users.json:", error);
     try {
@@ -330,7 +356,7 @@ function loadStore() {
     } catch (backupError) {
       console.error("Не удалось сохранить копию поврежденного users.json:", backupError.message);
     }
-    return { users: [] };
+    return { users: [], oauthCodes: [] };
   }
 }
 
@@ -3292,6 +3318,8 @@ attachChatGptApp(app, {
   uploadsDir,
   maxUploadMb: MAX_UPLOAD_MB,
   authLimiter,
+  oauthAuthorizeLimiter,
+  oauthTokenLimiter,
   loadStore,
   saveStore,
   verifyPassword,

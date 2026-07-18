@@ -755,6 +755,8 @@ export function attachChatGptApp(app, options) {
     uploadsDir,
     maxUploadMb,
     authLimiter,
+    oauthAuthorizeLimiter,
+    oauthTokenLimiter,
     loadStore,
     saveStore,
     verifyPassword,
@@ -769,9 +771,10 @@ export function attachChatGptApp(app, options) {
     baseUrlFromRequest
   } = options;
 
-  const oauthCodes = new Map();
   const oauthTemplate = fs.readFileSync(path.join(rootDir, "oauth-login.html"), "utf8");
-  const limiter = authLimiter || ((req, res, next) => next());
+  const fallbackLimiter = authLimiter || ((req, res, next) => next());
+  const authorizeLimiter = oauthAuthorizeLimiter || fallbackLimiter;
+  const tokenLimiter = oauthTokenLimiter || fallbackLimiter;
   const configuredBaseUrl = normalizeBaseUrl(publicBaseUrl);
   const maxImageBytes = Math.min(Math.max(1, Number(maxUploadMb) || 20), 20) * 1024 * 1024;
 
@@ -871,7 +874,7 @@ export function attachChatGptApp(app, options) {
     }
   });
 
-  app.post("/oauth/authorize", limiter, async (req, res) => {
+  app.post("/oauth/authorize", authorizeLimiter, async (req, res) => {
     const baseUrl = baseForRequest(req);
     let params;
     try {
@@ -891,19 +894,22 @@ export function attachChatGptApp(app, options) {
       }
 
       const code = crypto.randomBytes(32).toString("base64url");
-      oauthCodes.set(code, {
+      const now = Date.now();
+      const store = authenticated.store;
+      store.oauthCodes = (Array.isArray(store.oauthCodes) ? store.oauthCodes : [])
+        .filter((item) => Number(item.expiresAt || 0) > now)
+        .slice(-49);
+      store.oauthCodes.push({
+        codeHash: crypto.createHash("sha256").update(code).digest("base64url"),
         userId: authenticated.user.id,
         clientId: params.clientId,
         redirectUri: params.redirectUri,
         codeChallenge: params.codeChallenge,
         resource: params.resource,
         scopes: params.scopes,
-        expiresAt: Date.now() + OAUTH_CODE_TTL_MS
+        expiresAt: now + OAUTH_CODE_TTL_MS
       });
-
-      for (const [storedCode, value] of oauthCodes.entries()) {
-        if (Number(value.expiresAt || 0) <= Date.now()) oauthCodes.delete(storedCode);
-      }
+      saveStore(store);
 
       const callback = new URL(params.redirectUri);
       callback.searchParams.set("code", code);
@@ -916,7 +922,7 @@ export function attachChatGptApp(app, options) {
     }
   });
 
-  app.post("/oauth/token", limiter, (req, res) => {
+  app.post("/oauth/token", tokenLimiter, (req, res) => {
     const baseUrl = baseForRequest(req);
     const canonicalResource = `${baseUrl}${MCP_PATH}`;
     const grantType = cleanText(req.body?.grant_type, 80);
@@ -924,8 +930,18 @@ export function attachChatGptApp(app, options) {
 
     if (grantType === "authorization_code") {
       const code = cleanText(req.body?.code, 300);
-      const stored = oauthCodes.get(code);
-      oauthCodes.delete(code);
+      const codeHash = crypto.createHash("sha256").update(code).digest("base64url");
+      const now = Date.now();
+      const store = loadStore();
+      const storedIndex = (Array.isArray(store.oauthCodes) ? store.oauthCodes : [])
+        .findIndex((item) => item.codeHash === codeHash);
+      const stored = storedIndex >= 0 ? store.oauthCodes[storedIndex] : null;
+      store.oauthCodes = (Array.isArray(store.oauthCodes) ? store.oauthCodes : [])
+        .filter((item, index) => (
+          index !== storedIndex && Number(item.expiresAt || 0) > now
+        ));
+      saveStore(store);
+
       if (!stored || stored.expiresAt <= Date.now()) {
         return res.status(400).json({
           error: "invalid_grant",
@@ -951,6 +967,13 @@ export function attachChatGptApp(app, options) {
         return res.status(400).json({
           error: "invalid_grant",
           error_description: "PKCE-проверка или параметры подключения не совпали."
+        });
+      }
+
+      if (!store.users.some((item) => item.id === stored.userId)) {
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "Аккаунт больше не существует."
         });
       }
 
