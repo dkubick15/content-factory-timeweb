@@ -41,7 +41,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-18-plain-text-media-prompts-v27";
+const APP_BUILD = "2026-07-18-plain-text-media-prompts-v28";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.camp-mustang.workers.dev"
@@ -1481,7 +1481,8 @@ function defaultWorkspace() {
     ideas: [],
     media: [],
     queue: [],
-    logs: []
+    logs: [],
+    critic: null
   };
 }
 
@@ -1503,7 +1504,14 @@ function sanitizeWorkspace(input = {}) {
     ideas: Array.isArray(input.ideas) ? input.ideas.slice(0, 50) : [],
     media: Array.isArray(input.media) ? input.media.slice(0, 300) : [],
     queue: Array.isArray(input.queue) ? input.queue.slice(0, 300) : [],
-    logs: Array.isArray(input.logs) ? input.logs.slice(0, 120) : []
+    logs: Array.isArray(input.logs) ? input.logs.slice(0, 120) : [],
+    critic: isPlainObject(input.critic)
+      ? {
+        ...input.critic,
+        critique: plainPublicationText(input.critic.critique || ""),
+        improvementsMade: plainPublicationText(input.critic.improvementsMade || "")
+      }
+      : null
   };
 
   workspace.ideas = workspace.ideas.map((idea) => {
