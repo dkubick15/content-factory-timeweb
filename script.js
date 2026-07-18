@@ -158,7 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
       platform: "dzen",
       goal: "привлечь целевых клиентов через пользу и SEO",
       style: "пошагово, практически, понятно",
-      formatNote: "Пошаговая SEO-инструкция (## шаг 1 и т.д.), закрывающая конкретную проблему клиента, с интеграцией нашего продукта/услуги как лучшего решения.",
+      formatNote: "Пошаговая SEO-инструкция с обычными названиями смысловых блоков без Markdown. Дай конкретные критерии и действия, закрой проблему клиента и естественно покажи роль нашего решения.",
       briefAdd: "Нужен полезный гайд-инструкция для Дзена. Важно: дать практическую пользу и естественно встроить рекламу наших услуг.",
       tag: "инструкции"
     },
@@ -171,6 +171,16 @@ document.addEventListener("DOMContentLoaded", () => {
       formatNote: "Подробный кейс для Дзена: исходная задача, как решали шаг за шагом, итоговый результат в цифрах и выводы. Оптимизируй заголовок и текст под поиск.",
       briefAdd: "Нужен кейс в Дзен. Опиши процесс работы, покажи результаты и подкрепи их нашими преимуществами.",
       tag: "кейсы"
+    },
+    {
+      id: "telegram-reach",
+      name: "Охватный экспертный пост",
+      platform: "telegram",
+      goal: "получить охват, пересылки и обращения от целевой аудитории",
+      style: "живо, конкретно, с сильным первым абзацем, без кликбейта",
+      formatNote: "Одна узнаваемая ситуация или дорогая ошибка, конкретный критерий/чек-лист, доказательство из практики и естественный следующий шаг. Plain text без Markdown, 700–1800 знаков.",
+      briefAdd: "Нужен медийный пост для Telegram: заинтересовать именно целевую аудиторию, дать пользу, которую хочется сохранить или переслать, и нативно привести к обращению.",
+      tag: "охват"
     },
     {
       id: "telegram-info",
@@ -219,8 +229,8 @@ document.addEventListener("DOMContentLoaded", () => {
     settings: {
       model: "",
       ideaCount: "3",
-      style: "острый, экспертный, без воды",
-      objective: "заявки",
+      style: "живой, экспертный, конкретный, без воды и кликбейта",
+      objective: "охват, доверие и целевые заявки",
       openaiApiKey: "",
       telegramBotToken: "",
       telegramChatId: "",
@@ -334,8 +344,8 @@ document.addEventListener("DOMContentLoaded", () => {
       merged.settings.openaiApiKey = "";
       merged.settings.telegramBotToken = "";
 
-      merged.ideas = parsed.ideas || [];
-      merged.queue = parsed.queue || [];
+      merged.ideas = sanitizeContentItems(parsed.ideas || []);
+      merged.queue = sanitizeQueueItems(parsed.queue || []);
       merged.media = parsed.media || [];
       merged.logs = parsed.logs || [];
       merged.selectedIdeaId = parsed.selectedIdeaId || "";
@@ -575,6 +585,64 @@ document.addEventListener("DOMContentLoaded", () => {
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+
+  function plainPublicationText(value) {
+    return String(value || "")
+      .replace(/\r\n?/g, "\n")
+      .replace(/```(?:[a-z0-9_-]+)?\s*/gi, "")
+      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/gi, "$1: $2")
+      .split("\n")
+      .map((line) => line
+        .replace(/^\s*#{1,6}\s+(?=\S)/, "")
+        .replace(/^\s*#{2,6}(?=\S)/, "")
+        .replace(/^\s*>\s?/, "")
+        .replace(/^(\s*)[*+]\s+/, "$1• ")
+        .replace(/`([^`\n]+)`/g, "$1")
+        .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+        .replace(/__([^_\n]+)__/g, "$1")
+        .replace(/~~([^~\n]+)~~/g, "$1")
+        .replace(/\*([^*\n]+)\*/g, "$1"))
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function plainPublicationHeadline(value) {
+    return plainPublicationText(value)
+      .replace(/\s*\n+\s*/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  function sanitizeContentItems(items = []) {
+    return (Array.isArray(items) ? items : []).map((idea) => ({
+      ...idea,
+      title: plainPublicationHeadline(idea?.title || ""),
+      angle: plainPublicationHeadline(idea?.angle || ""),
+      pillar: plainPublicationHeadline(idea?.pillar || ""),
+      formats: Object.fromEntries(
+        Object.entries(idea?.formats || {}).map(([key, content]) => [
+          key,
+          {
+            ...content,
+            format: plainPublicationHeadline(content?.format || ""),
+            headline: plainPublicationHeadline(content?.headline || ""),
+            body: plainPublicationText(content?.body || ""),
+            tags: plainPublicationText(content?.tags || "")
+          }
+        ])
+      )
+    }));
+  }
+
+  function sanitizeQueueItems(items = []) {
+    return (Array.isArray(items) ? items : []).map((post) => ({
+      ...post,
+      title: plainPublicationHeadline(post?.title || ""),
+      body: plainPublicationText(post?.body || ""),
+      tags: plainPublicationText(post?.tags || "")
+    }));
   }
 
   function cleanError(message) {
@@ -1064,20 +1132,14 @@ document.addEventListener("DOMContentLoaded", () => {
       listItems = [];
     };
 
-    text.split(/\n+/).map(p => p.trim()).filter(Boolean).forEach((paragraph) => {
-      if (/^[-*]\s+/.test(paragraph)) {
-        listItems.push(paragraph.replace(/^[-*]\s+/, ""));
+    plainPublicationText(text).split(/\n+/).map(p => p.trim()).filter(Boolean).forEach((paragraph) => {
+      if (/^(?:[-*•])\s+/.test(paragraph)) {
+        listItems.push(paragraph.replace(/^(?:[-*•])\s+/, ""));
         return;
       }
 
       flushList();
-      if (/^###\s+/.test(paragraph)) {
-        blocks.push(`<h3>${escapeHtml(paragraph.replace(/^###\s+/, ""))}</h3>`);
-      } else if (/^#{1,2}\s+/.test(paragraph)) {
-        blocks.push(`<h2>${escapeHtml(paragraph.replace(/^#{1,2}\s+/, ""))}</h2>`);
-      } else {
-        blocks.push(`<p>${escapeHtml(paragraph)}</p>`);
-      }
+      blocks.push(`<p>${escapeHtml(paragraph)}</p>`);
     });
     flushList();
 
@@ -1088,8 +1150,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return `
       <div class="panel dzen-preview">
         <div class="dzen-preview-bar">
-          <span class="dzen-preview-label">ДЗЕН — ПРЕДПРОСМОТР СТАТЬИ</span>
-          <span class="chip info">dzen.ru</span>
+          <span class="dzen-preview-label">УНИВЕРСАЛЬНЫЙ PLAIN-TEXT</span>
+          <span class="chip info">Telegram → Дзен</span>
         </div>
         
         <article>
@@ -1264,8 +1326,20 @@ document.addEventListener("DOMContentLoaded", () => {
               <div class="metric-label metric-label-compact">Хук / Заголовок</div>
             </div>
             <div class="metric metric-compact">
+              <div class="metric-value critic-score ${c.audienceScore >= 80 ? 'is-good' : 'is-bad'}">${c.audienceScore || 0}%</div>
+              <div class="metric-label metric-label-compact">Попадание в ЦА</div>
+            </div>
+            <div class="metric metric-compact">
               <div class="metric-value critic-score ${c.painScore >= 80 ? 'is-good' : 'is-bad'}">${c.painScore || 0}%</div>
               <div class="metric-label metric-label-compact">Раскрытие боли</div>
+            </div>
+            <div class="metric metric-compact">
+              <div class="metric-value critic-score ${c.retentionScore >= 80 ? 'is-good' : 'is-bad'}">${c.retentionScore || 0}%</div>
+              <div class="metric-label metric-label-compact">Удержание</div>
+            </div>
+            <div class="metric metric-compact">
+              <div class="metric-value critic-score ${c.shareScore >= 80 ? 'is-good' : 'is-bad'}">${c.shareScore || 0}%</div>
+              <div class="metric-label metric-label-compact">Сохранения / пересылки</div>
             </div>
             <div class="metric metric-compact">
               <div class="metric-value critic-score ${c.proofScore >= 80 ? 'is-good' : 'is-bad'}">${c.proofScore || 0}%</div>
@@ -1278,6 +1352,10 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="metric metric-compact">
               <div class="metric-value critic-score ${c.platformScore >= 80 ? 'is-good' : 'is-bad'}">${c.platformScore || 0}%</div>
               <div class="metric-label metric-label-compact">Формат площадки</div>
+            </div>
+            <div class="metric metric-compact">
+              <div class="metric-value critic-score ${c.reachScore >= 80 ? 'is-good' : 'is-bad'}">${c.reachScore || 0}%</div>
+              <div class="metric-label metric-label-compact">Потенциал охвата</div>
             </div>
           </div>
         </div>
@@ -1751,8 +1829,12 @@ document.addEventListener("DOMContentLoaded", () => {
           const publishDate = todayInputValue();
           const publishTime = nextHourInputValue();
           state.queue.push({
-            id: uid('q'), title: content.headline || idea.title, body: content.body || idea.title,
-            tags: '', publishDate, publishTime,
+            id: uid('q'),
+            title: plainPublicationHeadline(content.headline || idea.title),
+            body: plainPublicationText(content.body || idea.title),
+            tags: plainPublicationText(content.tags || ""),
+            publishDate,
+            publishTime,
             scheduledAt: scheduledAtIso(publishDate, publishTime),
             platform: "telegram",
             contentFormat,
@@ -1780,6 +1862,8 @@ document.addEventListener("DOMContentLoaded", () => {
       serverSyncReady = true;
       if (data.workspace && data.workspace.projects) {
         state = { ...state, ...data.workspace };
+        state.ideas = sanitizeContentItems(state.ideas);
+        state.queue = sanitizeQueueItems(state.queue);
         if (data.limitInfo) state.limitInfo = data.limitInfo;
         if (data.openaiReady !== undefined) state.settings.openaiReady = data.openaiReady;
         ensurePlanner();
@@ -1873,7 +1957,8 @@ document.addEventListener("DOMContentLoaded", () => {
     setBusy(true); showGenerationOverlay();
     try {
       const data = await request("/api/generate", { method: "POST", body: { project: activeProject(), settings: state.settings, platform: state.activePlatform, planner: ensurePlanner(), templateId: state.activeTemplateId } });
-      state.ideas = (data.ideas || []).map(i => ({ id: uid("i"), ...i, status: i.status || "Готово" }));
+      state.ideas = sanitizeContentItems(data.ideas || [])
+        .map(i => ({ id: uid("i"), ...i, status: i.status || "Готово" }));
       state.critic = data.critic || null;
       state.selectedIdeaId = state.ideas[0]?.id || ""; state.activeTab = "factory";
       showToast(data.warning ? "Получился черновик. Проверь факты перед публикацией." : "Статьи готовы");
@@ -1941,9 +2026,9 @@ document.addEventListener("DOMContentLoaded", () => {
       projectId: state.activeProjectId,
       platform: "telegram",
       contentFormat: state.activePlatform,
-      title: content.headline,
-      body: content.body,
-      tags: content.tags,
+      title: plainPublicationHeadline(content.headline),
+      body: plainPublicationText(content.body),
+      tags: plainPublicationText(content.tags),
       mediaId: state.selectedMediaId || "",
       mediaUrl: media?.url || "",
       mediaType: media?.type || "",
@@ -2087,7 +2172,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function formatPublicationText(post) {
-    return [post.title, "", post.body, "", post.tags].filter(Boolean).join("\n").trim();
+    return [
+      plainPublicationHeadline(post.title),
+      "",
+      plainPublicationText(post.body),
+      "",
+      plainPublicationText(post.tags)
+    ].filter(Boolean).join("\n").trim();
   }
 
   async function generateImage() {
@@ -2414,5 +2505,20 @@ document.addEventListener("DOMContentLoaded", () => {
     if (t.matches('[data-action="setting-input"]')) { state.settings[t.name] = t.value; saveState(); scheduleWorkspaceSave(); }
     if (t.matches('[data-action="select-media"]')) { state.selectedMediaId = t.value; saveState(); render(); }
     if (t.matches('[data-action="sidebar-select-project"]')) { state.activeProjectId = t.value; render(); }
+    if (t.matches('[data-action="edit-content"]')) {
+      const idea = selectedIdea();
+      const content = idea?.formats?.[state.activePlatform];
+      if (!idea || !content) return;
+      const field = t.dataset.field;
+      const cleaned = field === "headline"
+        ? plainPublicationHeadline(t.value)
+        : plainPublicationText(t.value);
+      content[field] = cleaned;
+      if (field === "headline") idea.title = cleaned;
+      t.value = cleaned;
+      saveState();
+      scheduleWorkspaceSave();
+      updatePublicationLimit();
+    }
   });
 });

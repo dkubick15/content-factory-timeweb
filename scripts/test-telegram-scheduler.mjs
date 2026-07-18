@@ -117,8 +117,8 @@ try {
     body: {
       post: {
         id: scheduledId,
-        title: "Проверка расписания",
-        body: "Публикация через подписанный ретранслятор.",
+        title: "## Проверка расписания",
+        body: "**Публикация** через подписанный ретранслятор.\n\n### Детали\n* без Markdown-мусора",
         tags: "#test",
         platform: "telegram",
         contentFormat: "dzen",
@@ -134,12 +134,17 @@ try {
     return post?.status === "published" ? post : null;
   });
   assert.equal(scheduledPost.telegramMessageId, 901);
+  assert.equal(scheduledPost.title, "Проверка расписания");
+  assert.equal(
+    scheduledPost.body,
+    "Публикация через подписанный ретранслятор.\n\nДетали\n• без Markdown-мусора"
+  );
 
   const immediateId = "immediate-test";
   const immediatePost = {
     id: immediateId,
-    title: "Проверка кнопки",
-    body: "Немедленная публикация через сервер.",
+    title: "### Проверка кнопки",
+    body: "__Немедленная публикация__ через `сервер`.",
     tags: "#test",
     platform: "telegram",
     contentFormat: "telegram",
@@ -162,6 +167,11 @@ try {
   assert.equal(storedImmediate.status, "published");
   assert.equal(storedImmediate.telegramMessageId, 902);
   assert.equal(requests.length, 2);
+  assert.equal(requests[0].text.includes("##"), false);
+  assert.equal(requests[0].text.includes("**"), false);
+  assert.equal(requests[1].text.includes("###"), false);
+  assert.equal(requests[1].text.includes("__"), false);
+  assert.equal(requests[1].text.includes("`"), false);
 
   console.log("Telegram integration test passed: scheduled=901, immediate=902.");
 } catch (error) {

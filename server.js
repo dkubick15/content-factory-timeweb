@@ -41,7 +41,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-18-telegram-first-worker-v24";
+const APP_BUILD = "2026-07-18-plain-text-media-prompts-v25";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.accessible-visitor.workers.dev"
@@ -1017,6 +1017,34 @@ function stripAiReasoning(text) {
     .trim();
 }
 
+function plainPublicationText(value) {
+  return String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/```(?:[a-z0-9_-]+)?\s*/gi, "")
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/gi, "$1: $2")
+    .split("\n")
+    .map((line) => line
+      .replace(/^\s*#{1,6}\s+(?=\S)/, "")
+      .replace(/^\s*#{2,6}(?=\S)/, "")
+      .replace(/^\s*>\s?/, "")
+      .replace(/^(\s*)[*+]\s+/, "$1• ")
+      .replace(/`([^`\n]+)`/g, "$1")
+      .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+      .replace(/__([^_\n]+)__/g, "$1")
+      .replace(/~~([^~\n]+)~~/g, "$1")
+      .replace(/\*([^*\n]+)\*/g, "$1"))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function plainPublicationHeadline(value) {
+  return plainPublicationText(value)
+    .replace(/\s*\n+\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function looksLikeClarification(text) {
   const value = String(text || "").toLowerCase();
   return (
@@ -1163,28 +1191,28 @@ function normalizeIdeas(data) {
           : [];
 
   return ideas.map((item, index) => {
-    const title = String(item.title || item.hook || item.headline || item.name || `Идея ${index + 1}`).trim();
-    const angle = String(item.angle || item.type || "ИИ-угол").trim();
+    const title = plainPublicationHeadline(item.title || item.hook || item.headline || item.name || `Идея ${index + 1}`);
+    const angle = plainPublicationHeadline(item.angle || item.type || "ИИ-угол");
     const score = safeScore(item.score, 90 - index);
-    const pillar = String(item.pillar || item.category || item.rubric || "Контент").trim();
+    const pillar = plainPublicationHeadline(item.pillar || item.category || item.rubric || "Контент");
     const rawFormats = item.formats || {};
     const rawTelegram = rawFormats.telegram || item.telegram || {};
     const rawDzen = rawFormats.dzen || item.dzen || item.article || {};
-    const body = String(item.body || item.text || item.description || item.explanation || "").trim();
-    const tags = String(item.tags || "").trim();
+    const body = plainPublicationText(item.body || item.text || item.description || item.explanation || "");
+    const tags = plainPublicationText(item.tags || "");
 
     const formats = {
       dzen: {
-        format: String(rawDzen.format || "SEO-статья").trim(),
-        headline: String(rawDzen.headline || rawDzen.title || title).trim(),
-        body: String(rawDzen.body || rawDzen.text || body || title).trim(),
-        tags: String(rawDzen.tags || tags || "").trim()
+        format: plainPublicationHeadline(rawDzen.format || "SEO-статья"),
+        headline: plainPublicationHeadline(rawDzen.headline || rawDzen.title || title),
+        body: plainPublicationText(rawDzen.body || rawDzen.text || body || title),
+        tags: plainPublicationText(rawDzen.tags || tags || "")
       },
       telegram: {
-        format: String(rawTelegram.format || "Инфо-пост").trim(),
-        headline: String(rawTelegram.headline || rawTelegram.title || title).trim(),
-        body: String(rawTelegram.body || rawTelegram.text || body || title).trim(),
-        tags: String(rawTelegram.tags || tags || "").trim()
+        format: plainPublicationHeadline(rawTelegram.format || "Инфо-пост"),
+        headline: plainPublicationHeadline(rawTelegram.headline || rawTelegram.title || title),
+        body: plainPublicationText(rawTelegram.body || rawTelegram.text || body || title),
+        tags: plainPublicationText(rawTelegram.tags || tags || "")
       }
     };
 
@@ -1370,21 +1398,21 @@ function fallbackIdeasFromText(text, ideaCount, project = {}) {
       "",
       project.pain ? `В материале разберём проблему: ${project.pain}.` : "В материале разберём тему по шагам и отделим подтверждённые факты от предположений.",
       "",
-      "## Что важно понять до выбора решения",
+      "Что важно понять до выбора решения",
       project.offer
         ? `Рассматриваем решение: ${project.offer}.`
         : "Сначала зафиксируй исходную задачу, ограничения и критерии выбора. Не подменяй их общими обещаниями.",
       "",
-      proofItems.length ? "## Что можно подтвердить" : "## Какие данные нужно проверить",
+      proofItems.length ? "Что можно подтвердить" : "Какие данные нужно проверить",
       ...(proofItems.length
-        ? proofItems.map((item) => `- ${item}`)
+        ? proofItems.map((item) => `• ${item}`)
         : [
-          "- условия и ограничения",
-          "- реальные сроки и стоимость",
-          "- примеры и документы, которые можно показать читателю"
+          "• условия и ограничения",
+          "• реальные сроки и стоимость",
+          "• примеры и документы, которые можно показать читателю"
         ]),
       "",
-      "## Вывод",
+      "Вывод",
       nextStep
         ? nextStep
         : "Перед публикацией дополни черновик фактами из проекта и сформулируй безопасный следующий шаг для читателя."
@@ -1463,6 +1491,31 @@ function sanitizeWorkspace(input = {}) {
     logs: Array.isArray(input.logs) ? input.logs.slice(0, 120) : []
   };
 
+  workspace.ideas = workspace.ideas.map((idea) => {
+    const formats = isPlainObject(idea?.formats)
+      ? Object.fromEntries(
+        Object.entries(idea.formats).map(([key, content]) => [
+          key,
+          {
+            ...(isPlainObject(content) ? content : {}),
+            format: plainPublicationHeadline(content?.format || ""),
+            headline: plainPublicationHeadline(content?.headline || content?.title || ""),
+            body: plainPublicationText(content?.body || content?.text || ""),
+            tags: plainPublicationText(content?.tags || "")
+          }
+        ])
+      )
+      : {};
+
+    return {
+      ...idea,
+      title: plainPublicationHeadline(idea?.title || ""),
+      angle: plainPublicationHeadline(idea?.angle || ""),
+      pillar: plainPublicationHeadline(idea?.pillar || ""),
+      formats
+    };
+  });
+
   workspace.queue = workspace.queue.map((post) => {
     const media = workspace.media.find((item) => item.id && item.id === post.mediaId) || {};
     const publishDate = post.publishDate || datePartServer(post.scheduledAt);
@@ -1476,6 +1529,9 @@ function sanitizeWorkspace(input = {}) {
       id: String(post.id || crypto.randomUUID()),
       platform,
       contentFormat: ["dzen", "telegram"].includes(contentFormat) ? contentFormat : "telegram",
+      title: plainPublicationHeadline(post.title || ""),
+      body: plainPublicationText(post.body || ""),
+      tags: plainPublicationText(post.tags || ""),
       status,
       state: statusLabel(status),
       publishDate,
@@ -1976,27 +2032,46 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
     let jsonSchema = "";
 
     if (platform === "dzen") {
-      platformRequirements = "- dzen.body: готовая полезная статья для Дзена с понятным заголовком, коротким введением, разделами второго уровня (## Заголовок), списками там, где они помогают чтению, фактами только из базы проекта, выводом и безопасным следующим шагом. Не называй текст постом. Не подставляй вымышленные цены, сроки, гарантии, кейсы и цифры вместо отсутствующих данных.";
+      platformRequirements = [
+        "- dzen.body: универсальная статья, которая сначала публикуется одним сообщением в Telegram, а затем переносится в Дзен.",
+        "- Объём body: ориентир 2200–3400 знаков, чтобы заголовок, текст и теги вместе помещались в лимит Telegram 4096.",
+        "- Структура: сильное введение, 3–5 смысловых блоков, конкретный вывод и безопасный следующий шаг.",
+        "- Названия смысловых блоков пиши обычными строками без #, ##, ** и другой Markdown-разметки.",
+        "- Списки оформляй символом «•». Не повторяй headline первой строкой body.",
+        "- Вплетай поисковые формулировки естественно в headline и первые два абзаца, без переспама.",
+        "- Все факты бери только из базы проекта. Не подставляй вымышленные цены, сроки, гарантии, кейсы и цифры."
+      ].join("\n");
       jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"dzen":{"format":"SEO-статья","headline":"","body":"","tags":""}}}]}';
     } else if (platform === "telegram") {
-      platformRequirements = "- telegram.body: готовый, вовлекающий информационный пост для Telegram-канала на 3-5 абзацев с разметкой абзацев и списков. Должен быть живым, раскрывать внутреннюю кухню проекта, показывать, 'как все выглядит', или давать лаконичный анонс полезной статьи в Дзене. Должен содержать призыв к действию.";
+      platformRequirements = [
+        "- telegram.body: готовый пост на 700–1800 знаков, одна сильная мысль, короткие абзацы.",
+        "- Первые 2 предложения должны сразу называть ситуацию, риск, цену ошибки или неожиданный полезный вывод для целевой аудитории.",
+        "- Дай конкретную пользу, проверку, наблюдение, мини-инструкцию или фрагмент внутренней кухни, который хочется сохранить или переслать.",
+        "- Не используй #, ##, **, обратные кавычки и другую Markdown-разметку. Для списка используй «•».",
+        "- Не повторяй headline первой строкой body. Используй не более 2 уместных эмодзи и не более 3 тематических хэштегов.",
+        "- Заверши одним естественным действием: задать вопрос, узнать наличие/стоимость, сохранить, переслать или перейти по переданной ссылке."
+      ].join("\n");
       jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"telegram":{"format":"Инфо-пост","headline":"","body":"","tags":""}}}]}';
     } else {
       platformRequirements = [
-        "- dzen.body: полезная статья для Дзена с разделами, списками, фактами из базы проекта и безопасным следующим шагом.",
-        "- telegram.body: живой информационный пост для Telegram-канала на 3-5 абзацев с разметкой, рассказывающий о процессах компании или анонсирующий Дзен-статью."
+        "- dzen.body: универсальная plain-text статья до 3400 знаков с обычными названиями смысловых блоков, фактами и безопасным следующим шагом.",
+        "- telegram.body: живой plain-text пост на 700–1800 знаков с сильным первым абзацем, одной мыслью и конкретной пользой."
       ].join("\n");
       jsonSchema = '{"ideas":[{"title":"","angle":"","score":95,"pillar":"","formats":{"dzen":{"format":"SEO-статья","headline":"","body":"","tags":""},"telegram":{"format":"Инфо-пост","headline":"","body":"","tags":""}}}]}';
     }
 
     if (templateId === "faq-objection" && platform === "dzen") {
-      platformRequirements = "- dzen.body: статья для Дзена в формате FAQ. После короткого введения дай 4–6 разделов вида «## Вопрос клиента» и подробный ответ под каждым. Каждый ответ опирается только на данные базы проекта; отсутствующие цены, гарантии, сроки и факты не выдумывай. Заверши выводом и безопасным следующим шагом.";
+      platformRequirements = "- dzen.body: plain-text статья FAQ до 3400 знаков. После короткого введения дай 4–6 реальных вопросов клиента обычными строками без #, ## и Markdown, затем ответ под каждым. Каждый ответ опирается только на базу проекта. Заверши конкретным выводом и безопасным следующим шагом.";
     }
 
     const systemPrompt = [
-      "Ты контент-стратег и редактор продающего контента на русском.",
+      "Ты сильный контент-стратег, редактор медийных бизнес-каналов и конверсионный копирайтер на русском.",
       `Твоя задача - превращать бриф в готовые материалы только для выбранной площадки (${platformLabel}).`,
-      "Пиши емко, конкретно, без воды, без англицизмов, без длинного тире.",
+      "Пиши для конкретного человека в конкретной ситуации, а не для абстрактной аудитории.",
+      "Совмещай охват и коммерческий смысл: сначала полезность, узнавание или интрига, затем доказательство, после этого естественный следующий шаг.",
+      "Пиши емко, конкретно, разговорно, без воды, без англицизмов, без длинного тире и без рекламного крика.",
+      "Внутри headline, body и tags запрещена Markdown-разметка: # или ## перед заголовками, **, __, обратные кавычки, markdown-ссылки. Хэштеги вида #тема разрешены только в tags.",
+      "Не обещай вирусность и не используй обманный кликбейт. Заголовок обязан честно соответствовать содержанию.",
       "Не придумывай несуществующие факты. Если факта нет, используй аккуратную формулировку без цифр.",
       "Верни строго один JSON-объект. Без markdown. Без пояснений. Без вопросов пользователю.",
       "Если данных мало, не маскируй пробелы вымышленными фактами: дай полезную структуру и нейтральные объяснения только в пределах известного.",
@@ -2036,6 +2111,20 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
       briefSection = "Нет подробного брифа.";
     }
 
+    const nicheEditorialNote = /motor\s*port|двигател|д\s*в\s*с|контрактн.*мотор/i.test(
+      `${safeProject.name} ${safeProject.niche} ${safeProject.offer}`
+    )
+      ? [
+        "Редакционная логика Motor Port:",
+        "• Пиши для автовладельца, у которого двигатель уже сломался или есть риск капитального ремонта. У него мало времени, высокий страх ошибки и недоверие к продавцам моторов.",
+        "• Приоритетные медийные углы: дорогие ошибки при раздельной покупке и установке; как проверить ДВС до оплаты; ремонт или замена; совместимость; документы и гарантийная ответственность; разбор диагностики изнутри; мифы о контрактных моторах.",
+        "• В каждом материале раскрывай один вопрос. Не перечисляй все преимущества Motor Port подряд.",
+        "• Показывай экспертность через механизм: эндоскопия, компрессия, проверка стружки, давление масла, документы, фото- и видеоотчёт. Используй только те пункты, которые есть в базе проекта.",
+        "• Используй формулировки, которыми реально думает автовладелец: «двигатель застучал», «есть ли стружка», «подойдёт ли мотор», «кто отвечает после установки», но не придумывай марку, модель или поломку.",
+        "• Коммерческий переход делай нативно: сначала объясни риск и критерий решения, затем предложи проверить совместимость, наличие или стоимость под конкретный автомобиль."
+      ].join("\n")
+      : "";
+
     const userPrompt = [
       `Сгенерируй ровно ${ideaCount} идею/идеи для контента в формате JSON.`,
       "",
@@ -2044,6 +2133,7 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
       "",
       `Вводные данные проекта (База коммерческого контекста):`,
       briefSection,
+      nicheEditorialNote ? `\n${nicheEditorialNote}` : "",
       "",
       `Цель: ${safeSettings.objective}`,
       `Тон: ${safeSettings.style}`,
@@ -2058,20 +2148,28 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
       `Особые требования: ${safePlanner.formatNote}`,
       "",
       "Требования:",
-      "- title: до 90 символов, сильный хук.",
+      "- title: до 90 символов, конкретный сильный хук без кликбейта и без точки в конце.",
       "- angle и pillar: коротко.",
       platformRequirements,
+      "- В первых 350 знаках читатель должен узнать свою ситуацию и понять, зачем читать дальше.",
+      "- Один материал = одна главная мысль. Не пытайся рассказать всё о компании сразу.",
+      "- Добавь минимум один подтверждённый факт, механизм проверки, критерий выбора или наблюдение из практики.",
+      "- Добавь элемент пересылаемости: предупреждение о дорогой ошибке, чек-лист, понятный критерий, неожиданное сравнение или полезный вывод.",
+      "- Если идей несколько, разведи их по углам: дорогая ошибка, практический выбор, внутренняя кухня/доказательство, кейс или разбор мифа. Не повторяй один сюжет.",
+      "- Не превращай каждый материал в прямую рекламу. Польза и доверие должны занимать основную часть текста.",
+      "- CTA должен соответствовать цели и стадии аудитории: холодной аудитории предложи сохранить/переслать/проверить, горячей - узнать наличие, стоимость или отправить данные на подбор.",
       "- Каждый формат должен быть самостоятельным, а не копией одного текста.",
       "- Учитывай выбранную площадку и не добавляй форматы других площадок.",
       "- Не используй слова: уникальный, профессиональный, качественный, надежный, индивидуальный подход.",
       "- Не используй символ длинного тире.",
+      "- В headline и body не используй Markdown. Хэштеги допустимы только в tags, максимум 3.",
       "",
       `Верни строго JSON по схеме: ${jsonSchema}`,
       "Верни только валидный JSON-объект. Без markdown. Без пояснений. Без вопросов пользователю. Если данных мало, всё равно сделай рабочую версию на основе переданного текста."
     ].join("\n");
 
     const requestPayload = {
-      temperature: 0.35,
+      temperature: 0.45,
       max_tokens: AI_MAX_TOKENS,
       messages: [
         { role: "system", content: systemPrompt },
@@ -2114,23 +2212,40 @@ app.post("/api/generate", requireAuth, aiLimiter, enforceGenerationLimit, async 
       try {
         console.log("[AI-Critic] Запуск маркетинговой проверки контента...");
 
-        const criticSystemPrompt = `You are a strict, highly professional Conversion Rate Optimization (CRO) expert and master copywriter.
-Your task is to review the generated content package and evaluate it with extreme rigor.
-1. Scoring: Rate the package on a scale of 0-100 across 5 metrics:
-   - "hookScore": Strength of the opening hook, first seconds, or ad headline. Is it highly compelling?
-   - "painScore": How deeply it resonates with the specified audience pain points. Is it emotional yet precise?
-   - "proofScore": Effective use of specific proofs, figures, and trust markers from the project's Proof Vault (e.g. warranties, prices, facts). If the copy uses vague fluff like "best quality", "reliable team", punish the score severely.
-   - "ctaScore": Actionability and strength of the call to action, integrating the landing page and lead magnet.
-   - "platformScore": Adherence to platform rhythm and requirements (e.g. reels visual pacing, telegram paragraph pacing, RSY length limit).
-2. Critique: Write a highly constructive, brief marketing critique in Russian (what works, what is weak, why).
-3. Polish: Rewrite and polish any parts of the package to eliminate fluff and use only numbers, warranties, or facts explicitly present in the project profile. Never invent proof to increase the score.
+        const criticSystemPrompt = `You are a strict editor of high-reach Russian business media and a conversion copywriter.
+Review the generated content as if publication quality, audience fit, forwards, saves, trust and qualified leads all matter.
+
+Score every metric from 0 to 100:
+   - "hookScore": the first 350 characters make the right reader stop without deceptive clickbait.
+   - "audienceScore": the situation, language and problem precisely match the stated target audience and awareness stage.
+   - "painScore": the reader's real risk or difficulty is described precisely without artificial fearmongering.
+   - "retentionScore": one clear narrative line, short readable paragraphs, no repetition, useful payoff before the end.
+   - "shareScore": there is a concrete warning, checklist, criterion, comparison or insight worth saving or forwarding.
+   - "proofScore": only explicit project facts, mechanisms, documents, figures and trust markers are used. Punish vague claims.
+   - "ctaScore": the next step is natural, low-friction and appropriate for the reader's readiness.
+   - "platformScore": the text fits the requested platform and length, uses plain text, and contains no Markdown markers.
+   - "reachScore": overall organic reach potential based on relevance, clarity, topical specificity and discussion value. This is an editorial estimate, never a guarantee.
+
+Write a concise critique in Russian. Then rewrite every item scoring below 82. Preserve only facts explicitly present in the project profile. Never invent proof, results, prices, deadlines, warranties, models or customer stories.
+
+Mandatory output rules for headline/body/tags:
+- no Markdown headings (#, ##), bold markers (** or __), backticks or markdown links;
+- use normal paragraph breaks and «•» for bullets;
+- hashtags are allowed only in tags, maximum 3;
+- do not repeat the headline at the start of body;
+- output plain text strings inside valid JSON.
+
 Output the polished JSON package in the EXACT SAME schema but add a top-level "critic" object:
 "critic": {
   "hookScore": 92,
-  "painScore": 95,
+  "audienceScore": 94,
+  "painScore": 92,
+  "retentionScore": 91,
+  "shareScore": 88,
   "proofScore": 88,
   "ctaScore": 90,
   "platformScore": 94,
+  "reachScore": 90,
   "summaryScore": 92,
   "critique": "Критика маркетолога в 2-4 предложениях...",
   "improvementsMade": "Какие улучшения были внесены..."
@@ -2172,6 +2287,15 @@ ${JSON.stringify({ ideas }, null, 2)}
       }
     }
 
+    const finalIdeas = normalizeIdeas({ ideas: finalPayload.ideas || ideas });
+    const finalCritic = finalPayload.critic && isPlainObject(finalPayload.critic)
+      ? {
+        ...finalPayload.critic,
+        critique: plainPublicationText(finalPayload.critic.critique || ""),
+        improvementsMade: plainPublicationText(finalPayload.critic.improvementsMade || "")
+      }
+      : null;
+
     consumeGenerationLimit(req);
     res.json({
       ok: true,
@@ -2179,8 +2303,8 @@ ${JSON.stringify({ ideas }, null, 2)}
       model: modelToUse,
       warning,
       rawWasJson: !warning,
-      ideas: finalPayload.ideas || ideas,
-      critic: finalPayload.critic || null,
+      ideas: finalIdeas.length ? finalIdeas : ideas,
+      critic: finalCritic,
       limitInfo: getLimitInfo(req)
     });
   } catch (error) {
@@ -2242,9 +2366,9 @@ app.post("/api/refine", requireAuth, aiLimiter, enforceGenerationLimit, async (r
     } else if (action === "shorten") {
       instruction = `Максимально сократи следующий текст, убери из него всю "воду" и лишние вводные слова. Сделай его емким, плотным и коротким, но сохрани ключевой оффер и CTA.`;
     } else if (action === "adapt-dzen") {
-      instruction = `Переделай следующий текст под формат полноценной полезной SEO-статьи для Яндекс.Дзена. Структурируй его с помощью понятных подзаголовков (## заголовок), списков и абзацев. Сделай акцент на решении боли клиента, добавь пользу, ключевые слова и сильный продающий CTA в конце для оставления заявки.`;
+      instruction = `Переделай текст в полезную универсальную статью, которая помещается в одно сообщение Telegram и затем переносится в Дзен. Ориентир 2200–3400 знаков. Используй обычные названия смысловых блоков без #, ## и Markdown, короткие абзацы и списки через «•». Начни с узнаваемой ситуации или дорогой ошибки, дай конкретную пользу и проверяемые факты, заверши естественным следующим шагом без давления.`;
     } else if (action === "adapt-telegram") {
-      instruction = `Переделай следующий текст в живой, лаконичный информационный пост для Telegram-канала на 3-5 абзацев. Пиши человеческим языком, добавь немного уместных эмодзи, раздели на абзацы и сделай призыв к действию.`;
+      instruction = `Переделай текст в сильный Telegram-пост на 700–1800 знаков. Первые два предложения должны точно попадать в ситуацию целевой аудитории и создавать честное желание читать дальше. Оставь одну главную мысль, добавь конкретный критерий, предупреждение, чек-лист или наблюдение, которое хочется сохранить или переслать. Используй короткие абзацы, максимум 2 уместных эмодзи и один естественный следующий шаг.`;
     } else {
       instruction = `Улучши следующий текст: сделай его более вовлекающим, чистым и продающим.`;
     }
@@ -2252,7 +2376,8 @@ app.post("/api/refine", requireAuth, aiLimiter, enforceGenerationLimit, async (r
     const systemPrompt = `You are a professional conversion copywriter.
 Your task is to take the user's text and refine it strictly according to the instruction.
 Maintain the original Russian language.
-Do not include any chat prefix, introductions, questions, explanations, or markdown formatting. Output ONLY the improved final text string.`;
+Do not include any chat prefix, introductions, questions or explanations.
+Return plain text only. Never use Markdown headings (#, ##), bold markers (** or __), backticks or markdown links. Use «•» for bullets. Output ONLY the improved final text string.`;
 
     const userPrompt = `
 Бизнес-контекст проекта:
@@ -2278,10 +2403,10 @@ ${instruction}
     };
 
     const result = await callTimewebAgentApi(timewebApiKey, timewebAgentId, requestPayload);
-    const refinedText = result.completion.choices?.[0]?.message?.content || "";
+    const refinedText = plainPublicationText(result.completion.choices?.[0]?.message?.content || "");
 
     consumeGenerationLimit(req);
-    res.json({ ok: true, refinedText: refinedText.trim() });
+    res.json({ ok: true, refinedText });
   } catch (err) {
     console.error("Ошибка в /api/refine:", err.message);
     res.status(500).json({ error: `Не удалось улучшить текст: ${err.message}` });
@@ -2520,7 +2645,13 @@ app.post("/api/generate-image", requireAuth, aiLimiter, enforceGenerationLimit, 
 });
 
 function buildTelegramText(post) {
-  return [post?.title, "", post?.body, "", post?.tags]
+  return [
+    plainPublicationHeadline(post?.title),
+    "",
+    plainPublicationText(post?.body),
+    "",
+    plainPublicationText(post?.tags)
+  ]
     .filter(Boolean)
     .join("\n")
     .trim();
