@@ -42,9 +42,13 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-external-telegram-scheduler-v39";
+const APP_BUILD = "2026-07-19-external-telegram-trigger-v40";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
+  || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
+).replace(/\/+$/, "");
+const TELEGRAM_SCHEDULER_URL = (
+  process.env.TELEGRAM_SCHEDULER_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
 ).replace(/\/+$/, "");
 const TELEGRAM_PUBLISH_MODE = String(process.env.TELEGRAM_PUBLISH_MODE || "external").trim().toLowerCase();
@@ -2776,6 +2780,38 @@ async function telegramRelayCall(payload, botToken) {
   return data;
 }
 
+async function triggerExternalTelegramScheduler() {
+  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  if (!botToken) {
+    throw new Error("Не настроен ключ внешнего Telegram-планировщика.");
+  }
+
+  const timestamp = Date.now().toString();
+  const signature = crypto
+    .createHmac("sha256", botToken)
+    .update(`${timestamp}.scheduler`)
+    .digest("hex");
+  const response = await withTimeout(
+    fetch(`${TELEGRAM_SCHEDULER_URL}/api/run-scheduler`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; ContentFactoryScheduler/1.0)",
+        "X-Relay-Timestamp": timestamp,
+        "X-Relay-Signature": signature
+      },
+      cache: "no-store"
+    }),
+    55000,
+    "Telegram-планировщик"
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || `Telegram-планировщик: HTTP ${response.status}`);
+  }
+  return data;
+}
+
 async function publishTelegramThroughRelay(payload, botToken) {
   const text = String(payload?.text || "").trim();
   const mediaUrl = String(payload?.mediaUrl || "").trim();
@@ -3201,6 +3237,17 @@ async function runScheduledPublishing() {
 
   schedulerRunning = true;
   try {
+    if (TELEGRAM_EXTERNAL_SCHEDULER) {
+      try {
+        const result = await triggerExternalTelegramScheduler();
+        if (Number(result.processed || 0) > 0) {
+          console.log(`[Scheduler] Telegram: обработано публикаций ${result.processed}.`);
+        }
+      } catch (error) {
+        console.error("[Scheduler] Внешний Telegram-планировщик недоступен:", error.message);
+      }
+    }
+
     const store = loadStore();
     const now = Date.now();
 
