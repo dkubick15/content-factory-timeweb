@@ -200,14 +200,17 @@ try {
     token,
     body: { post: longMediaPost, media: longMedia }
   });
-  assert.equal(longMediaResult.telegram.result.message_id, 903);
-  assert.equal(requests.length, 3);
+  assert.equal(longMediaResult.telegram.result.message_id, 904);
+  assert.equal(requests.length, 4);
   assert.equal(requests[2].mediaUrl, longMedia.url);
   assert.equal(requests[2].mediaType, longMedia.type);
-  assert.equal(requests[2].text.length > 1024, true);
-  assert.equal(requests[2].text.length <= 4096, true);
+  assert.equal(requests[2].text, longMediaPost.title);
+  assert.equal(requests[2].text.length <= 1024, true);
+  assert.equal(requests[3].mediaUrl, "");
+  assert.equal(requests[3].text.length > 1024, true);
+  assert.equal(requests[3].text.length <= 4096, true);
 
-  console.log("Telegram integration test passed: scheduled=901, immediate=902, long-media=903.");
+  console.log("Telegram integration test passed: scheduled=901, immediate=902, long-media=903+904.");
 } catch (error) {
   console.error(appLogs);
   throw error;

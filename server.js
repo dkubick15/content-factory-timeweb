@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-workspace-recovery-v36";
+const APP_BUILD = "2026-07-19-telegram-fallback-v37";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.camp-mustang.workers.dev"
@@ -2721,13 +2721,11 @@ app.post("/api/generate-image", requireAuth, aiLimiter, enforceGenerationLimit, 
 function buildTelegramText(post) {
   return [
     plainPublicationHeadline(post?.title),
-    "",
     plainPublicationText(post?.body),
-    "",
     plainPublicationText(post?.tags)
   ]
     .filter(Boolean)
-    .join("\n")
+    .join("\n\n")
     .trim();
 }
 
@@ -2770,6 +2768,33 @@ async function telegramRelayCall(payload, botToken) {
     throw new Error(data.error || `Telegram-ретранслятор: HTTP ${response.status}`);
   }
   return data;
+}
+
+async function publishTelegramThroughRelay(payload, botToken) {
+  const text = String(payload?.text || "").trim();
+  const mediaUrl = String(payload?.mediaUrl || "").trim();
+  if (!mediaUrl || text.length <= 1024) {
+    return telegramRelayCall(payload, botToken);
+  }
+
+  const blocks = text.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
+  const caption = String(blocks.shift() || "Motor Port").slice(0, 1024);
+  const followupText = blocks.join("\n\n").trim() || text;
+  const mediaResult = await telegramRelayCall({
+    text: caption,
+    mediaUrl,
+    mediaType: String(payload?.mediaType || "")
+  }, botToken);
+  const textResult = await telegramRelayCall({
+    text: followupText,
+    mediaUrl: "",
+    mediaType: ""
+  }, botToken);
+
+  return {
+    ...textResult,
+    mediaMessageId: mediaResult.messageId || ""
+  };
 }
 
 app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) => {
@@ -2830,7 +2855,7 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
       });
     }
 
-    const result = await telegramRelayCall({
+    const result = await publishTelegramThroughRelay({
       text,
       mediaUrl,
       mediaType: String(media?.type || "")
@@ -3247,7 +3272,7 @@ async function runScheduledPublishing() {
             syncQueueToWorkspace(user, queue);
             saveStore(store);
 
-            const result = await telegramRelayCall({
+            const result = await publishTelegramThroughRelay({
               text,
               mediaUrl,
               mediaType

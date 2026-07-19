@@ -1,4 +1,4 @@
-// Build: 2026-07-19-workspace-recovery-v36
+// Build: 2026-07-19-telegram-fallback-v37
 document.addEventListener("DOMContentLoaded", () => {
   const TOKEN_KEY = "cf_full_token_v2";
   const USER_KEY = "cf_full_user_v2";
@@ -1481,7 +1481,7 @@ document.addEventListener("DOMContentLoaded", () => {
                   ${publicationLength > telegramLimit
                     ? `<strong>Сократи текст перед публикацией.</strong>`
                     : selectedMedia && publicationLength > 1024
-                      ? `<span>Картинка выйдет крупным предпросмотром над текстом</span>`
+                      ? `<span>Сначала выйдет картинка с заголовком, следом — основной текст</span>`
                       : `<span>Готово для одного сообщения в Telegram</span>`}
                 </div>
                 <label class="field">
@@ -2776,7 +2776,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ${length > limit
         ? `<strong>Сократи текст перед публикацией.</strong>`
         : media && length > 1024
-          ? `<span>Картинка выйдет крупным предпросмотром над текстом</span>`
+          ? `<span>Сначала выйдет картинка с заголовком, следом — основной текст</span>`
           : `<span>${media ? "Готово: изображение появится над текстом." : "Готово для одного сообщения в Telegram"}</span>`}
     `;
   }
@@ -2881,11 +2881,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function formatPublicationText(post) {
     return [
       plainPublicationHeadline(post.title),
-      "",
       plainPublicationText(post.body),
-      "",
       plainPublicationText(post.tags)
-    ].filter(Boolean).join("\n").trim();
+    ].filter(Boolean).join("\n\n").trim();
   }
 
   async function generateImage() {
