@@ -1,4 +1,4 @@
-// Build: 2026-07-19-telegram-long-posts-v35
+// Build: 2026-07-19-workspace-recovery-v36
 document.addEventListener("DOMContentLoaded", () => {
   const TOKEN_KEY = "cf_full_token_v2";
   const USER_KEY = "cf_full_user_v2";
@@ -2278,6 +2278,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* Network / Logic hooks (same as before) */
   function workspacePayload() { return { activeProjectId: state.activeProjectId, activePlatform: state.activePlatform, activeTemplateId: state.activeTemplateId, selectedIdeaId: state.selectedIdeaId, selectedMediaId: state.selectedMediaId, planner: state.planner, projects: state.projects, ideas: state.ideas, media: state.media, queue: state.queue, logs: state.logs, critic: state.critic }; }
+  function workspaceHasMaterials(workspace = {}) {
+    return ["ideas", "media", "queue"].some((key) => Array.isArray(workspace[key]) && workspace[key].length > 0);
+  }
   function scheduleWorkspaceSave() { if (!serverSyncReady || !token()) return; clearTimeout(serverSaveTimer); serverSaveTimer = setTimeout(pushWorkspace, 800); }
   async function pushWorkspace() { if (!token()) return; try { await request("/api/workspace", { method: "PUT", body: { workspace: workspacePayload() } }); } catch (e) { } }
   async function fetchWorkspace() {
@@ -2286,6 +2289,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await request("/api/workspace");
       serverSyncReady = true;
       if (data.workspace && data.workspace.projects) {
+        if (!workspaceHasMaterials(data.workspace) && workspaceHasMaterials(state)) {
+          await pushWorkspace();
+          showToast("Материалы восстановлены после перезапуска сервера");
+          render();
+          return;
+        }
         state = { ...state, ...data.workspace };
         if (!["materials", "queue", "media", "project", "settings"].includes(state.activeTab)) {
           state.activeTab = "materials";
@@ -2766,7 +2775,9 @@ document.addEventListener("DOMContentLoaded", () => {
       <span>Объём публикации: ${length} / ${limit} знаков</span>
       ${length > limit
         ? `<strong>Сократи текст перед публикацией.</strong>`
-        : `<span>${media ? "Готово: изображение появится над текстом." : "Готово для одного сообщения в Telegram"}</span>`}
+        : media && length > 1024
+          ? `<span>Картинка выйдет крупным предпросмотром над текстом</span>`
+          : `<span>${media ? "Готово: изображение появится над текстом." : "Готово для одного сообщения в Telegram"}</span>`}
     `;
   }
 
