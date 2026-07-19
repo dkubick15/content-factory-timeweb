@@ -50,7 +50,7 @@ TIMEWEB_AGENT_ID=id-вашего-созданного-агента
 
 # Telegram-first публикация
 TELEGRAM_RELAY_URL=https://адрес-защищенного-ретранслятора
-TELEGRAM_EXTERNAL_SCHEDULER=true
+TELEGRAM_PUBLISH_MODE=external
 TELEGRAM_BOT_TOKEN=токен-бота
 TELEGRAM_CHAT_ID=@имя_канала
 ```

@@ -42,12 +42,13 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-single-scheduler-v38";
+const APP_BUILD = "2026-07-19-external-telegram-scheduler-v39";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
-  || "https://motorports-telegram-relay.camp-mustang.workers.dev"
+  || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
 ).replace(/\/+$/, "");
-const TELEGRAM_EXTERNAL_SCHEDULER = process.env.TELEGRAM_EXTERNAL_SCHEDULER !== "false";
+const TELEGRAM_PUBLISH_MODE = String(process.env.TELEGRAM_PUBLISH_MODE || "external").trim().toLowerCase();
+const TELEGRAM_EXTERNAL_SCHEDULER = TELEGRAM_PUBLISH_MODE !== "direct";
 const TELEGRAM_SCHEDULED_STATUS = TELEGRAM_EXTERNAL_SCHEDULER ? "scheduled" : "scheduled_local";
 
 function extractJwt(value) {
