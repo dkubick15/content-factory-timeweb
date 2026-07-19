@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-isolated-telegram-queue-v41";
+const APP_BUILD = "2026-07-19-telegram-scheduler-diagnostics-v42";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -54,6 +54,12 @@ const TELEGRAM_SCHEDULER_URL = (
 const TELEGRAM_PUBLISH_MODE = String(process.env.TELEGRAM_PUBLISH_MODE || "external").trim().toLowerCase();
 const TELEGRAM_EXTERNAL_SCHEDULER = TELEGRAM_PUBLISH_MODE !== "direct";
 const TELEGRAM_SCHEDULED_STATUS = TELEGRAM_EXTERNAL_SCHEDULER ? "scheduled_relay" : "scheduled_local";
+const externalTelegramSchedulerState = {
+  lastAttemptAt: "",
+  lastSuccessAt: "",
+  lastError: "",
+  lastProcessed: 0
+};
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -1935,6 +1941,27 @@ app.post("/api/config", requireAuth, (req, res) => {
   }
 });
 
+app.get("/api/telegram/scheduler-status", requireAuth, (req, res) => {
+  res.json({
+    ok: true,
+    managedExternally: TELEGRAM_EXTERNAL_SCHEDULER,
+    schedulerUrl: TELEGRAM_SCHEDULER_URL,
+    ...externalTelegramSchedulerState
+  });
+});
+
+app.post("/api/telegram/run-scheduler", requireAuth, publishLimiter, async (req, res) => {
+  try {
+    const result = await triggerExternalTelegramScheduler();
+    res.json({ ok: true, ...result, state: externalTelegramSchedulerState });
+  } catch (error) {
+    res.status(502).json({
+      error: error.message || "Не удалось запустить Telegram-планировщик.",
+      state: externalTelegramSchedulerState
+    });
+  }
+});
+
 app.post("/api/ai/test", requireAuth, aiLimiter, async (req, res) => {
   try {
     if (!TIMEWEB_API_KEY || !TIMEWEB_AGENT_ID) {
@@ -2782,35 +2809,49 @@ async function telegramRelayCall(payload, botToken) {
 }
 
 async function triggerExternalTelegramScheduler() {
-  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
-  if (!botToken) {
-    throw new Error("Не настроен ключ внешнего Telegram-планировщика.");
-  }
+  externalTelegramSchedulerState.lastAttemptAt = new Date().toISOString();
+  try {
+    const botToken = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
+    if (!botToken) {
+      throw new Error("Не настроен ключ внешнего Telegram-планировщика.");
+    }
 
-  const timestamp = Date.now().toString();
-  const signature = crypto
-    .createHmac("sha256", botToken)
-    .update(`${timestamp}.scheduler`)
-    .digest("hex");
-  const response = await withTimeout(
-    fetch(`${TELEGRAM_SCHEDULER_URL}/api/run-scheduler`, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; ContentFactoryScheduler/1.0)",
-        "X-Relay-Timestamp": timestamp,
-        "X-Relay-Signature": signature
-      },
-      cache: "no-store"
-    }),
-    55000,
-    "Telegram-планировщик"
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.ok) {
-    throw new Error(data.error || `Telegram-планировщик: HTTP ${response.status}`);
+    const timestamp = Date.now().toString();
+    const signature = crypto
+      .createHmac("sha256", botToken)
+      .update(`${timestamp}.scheduler`)
+      .digest("hex");
+    const response = await withTimeout(
+      fetch(`${TELEGRAM_SCHEDULER_URL}/api/run-scheduler`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0 (compatible; ContentFactoryScheduler/1.0)",
+          "X-Relay-Timestamp": timestamp,
+          "X-Relay-Signature": signature
+        },
+        cache: "no-store"
+      }),
+      55000,
+      "Telegram-планировщик"
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || `Telegram-планировщик: HTTP ${response.status}`);
+    }
+
+    externalTelegramSchedulerState.lastSuccessAt = new Date().toISOString();
+    externalTelegramSchedulerState.lastError = "";
+    externalTelegramSchedulerState.lastProcessed = Number(data.processed || 0);
+    return data;
+  } catch (error) {
+    const cause = String(error?.cause?.message || "").trim();
+    const message = cause
+      ? `${error.message || "Ошибка соединения"}: ${cause}`
+      : String(error?.message || "Ошибка внешнего Telegram-планировщика");
+    externalTelegramSchedulerState.lastError = message.slice(0, 500);
+    throw new Error(message);
   }
-  return data;
 }
 
 async function publishTelegramThroughRelay(payload, botToken) {
