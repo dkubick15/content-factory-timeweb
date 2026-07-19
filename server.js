@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-external-telegram-trigger-v40";
+const APP_BUILD = "2026-07-19-isolated-telegram-queue-v41";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -53,7 +53,7 @@ const TELEGRAM_SCHEDULER_URL = (
 ).replace(/\/+$/, "");
 const TELEGRAM_PUBLISH_MODE = String(process.env.TELEGRAM_PUBLISH_MODE || "external").trim().toLowerCase();
 const TELEGRAM_EXTERNAL_SCHEDULER = TELEGRAM_PUBLISH_MODE !== "direct";
-const TELEGRAM_SCHEDULED_STATUS = TELEGRAM_EXTERNAL_SCHEDULER ? "scheduled" : "scheduled_local";
+const TELEGRAM_SCHEDULED_STATUS = TELEGRAM_EXTERNAL_SCHEDULER ? "scheduled_relay" : "scheduled_local";
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -1600,7 +1600,7 @@ function sanitizeWorkspace(input = {}) {
     const platform = "telegram";
     const sourceStatus = post.status || (post.state === "Опубликовано" ? "published" : TELEGRAM_SCHEDULED_STATUS);
     const normalizedStatus = sourceStatus === "ready" ? TELEGRAM_SCHEDULED_STATUS : sourceStatus;
-    const status = !TELEGRAM_EXTERNAL_SCHEDULER && normalizedStatus === "scheduled"
+    const status = ["scheduled", "scheduled_local", "scheduled_relay"].includes(normalizedStatus)
       ? TELEGRAM_SCHEDULED_STATUS
       : normalizedStatus;
     return {
@@ -1639,6 +1639,7 @@ function statusLabel(status) {
     ready: "Готово к публикации",
     scheduled: "Запланировано",
     scheduled_local: "Запланировано",
+    scheduled_relay: "Запланировано",
     publishing: "Публикуется",
     published: "Опубликовано",
     error: "Ошибка"

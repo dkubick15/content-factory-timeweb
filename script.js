@@ -807,7 +807,7 @@ document.addEventListener("DOMContentLoaded", () => {
       total: state.queue.length,
       today: state.queue.filter((item) => (item.publishDate || datePart(item.scheduledAt)) === today).length,
       ready: state.queue.filter((item) => item.status === "ready").length,
-      scheduled: state.queue.filter((item) => ["scheduled", "scheduled_local"].includes(item.status || "scheduled")).length,
+      scheduled: state.queue.filter((item) => ["scheduled", "scheduled_local", "scheduled_relay"].includes(item.status || "scheduled")).length,
       published: state.queue.filter((item) => item.status === "published" || item.state === "Опубликовано").length,
       errors: state.queue.filter((item) => item.status === "error" || item.state === "Ошибка").length
     };
@@ -1815,7 +1815,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderBoard() {
     const publishedItems = state.queue.filter(q => q.status === "published");
-    const pendingItems = state.queue.filter(q => ["scheduled", "scheduled_local", "ready"].includes(q.status));
+    const pendingItems = state.queue.filter(q => ["scheduled", "scheduled_local", "scheduled_relay", "ready"].includes(q.status));
     return `
       <div class="panel">
         <h1 class="title-xl">Канбан-доска</h1>
