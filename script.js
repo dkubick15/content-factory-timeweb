@@ -1,4 +1,4 @@
-// Build: 2026-07-19-chatgpt-session-tools-v34
+// Build: 2026-07-19-telegram-long-posts-v35
 document.addEventListener("DOMContentLoaded", () => {
   const TOKEN_KEY = "cf_full_token_v2";
   const USER_KEY = "cf_full_user_v2";
@@ -1289,7 +1289,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const planner = ensurePlanner();
     const completion = getProjectCompletionPercentage(project);
     const selectedMedia = state.media.find((item) => item.id === state.selectedMediaId);
-    const telegramLimit = selectedMedia ? 1024 : 4096;
+    const telegramLimit = 4096;
     const publicationLength = formatPublicationText({
       title: content.headline,
       body: content.body,
@@ -1479,8 +1479,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="publication-limit ${publicationLength > telegramLimit ? "is-over" : ""}" data-publication-limit>
                   <span>Объём публикации: ${publicationLength} / ${telegramLimit} знаков</span>
                   ${publicationLength > telegramLimit
-                    ? `<strong>${selectedMedia ? "С медиа Telegram допускает подпись до 1024 знаков." : "Сократи текст перед публикацией."}</strong>`
-                    : `<span>Готово для одного сообщения в Telegram</span>`}
+                    ? `<strong>Сократи текст перед публикацией.</strong>`
+                    : selectedMedia && publicationLength > 1024
+                      ? `<span>Картинка выйдет крупным предпросмотром над текстом</span>`
+                      : `<span>Готово для одного сообщения в Telegram</span>`}
                 </div>
                 <label class="field">
                   <span class="label">Медиа-файл</span>
@@ -2199,6 +2201,12 @@ document.addEventListener("DOMContentLoaded", () => {
           <span class="chip ${isPublished ? 'ok' : item.status === 'error' ? 'bad' : 'info'}">${escapeHtml(statusText)}</span>
         </div>
         <div class="text-mono my-12">${escapeHtml(shorten(item.body, 100))}</div>
+        ${item.lastError ? `
+          <div class="queue-error" role="status">
+            <strong>Почему не опубликовано:</strong>
+            <span>${escapeHtml(item.lastError)}</span>
+          </div>
+        ` : ""}
         <div class="actions">
           ${!isPublished ? `<button class="btn small" type="button" data-action="open-queue" data-id="${escapeHtml(item.id)}">Изменить</button>` : ""}
           ${!isPublished

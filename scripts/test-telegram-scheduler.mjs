@@ -173,7 +173,41 @@ try {
   assert.equal(requests[1].text.includes("__"), false);
   assert.equal(requests[1].text.includes("`"), false);
 
-  console.log("Telegram integration test passed: scheduled=901, immediate=902.");
+  const longMediaId = "long-media-test";
+  const longMediaBody = "Длинный пост с изображением. ".repeat(55).trim();
+  const longMediaPost = {
+    id: longMediaId,
+    title: "Проверка длинного поста",
+    body: longMediaBody,
+    tags: "#test",
+    platform: "telegram",
+    contentFormat: "telegram",
+    status: "publishing"
+  };
+  const longMedia = {
+    id: "media-test",
+    name: "test.jpg",
+    type: "image/jpeg",
+    url: "https://example.com/test.jpg"
+  };
+  await api("/api/queue", {
+    method: "POST",
+    token,
+    body: { post: longMediaPost }
+  });
+  const longMediaResult = await api("/api/publish/telegram", {
+    method: "POST",
+    token,
+    body: { post: longMediaPost, media: longMedia }
+  });
+  assert.equal(longMediaResult.telegram.result.message_id, 903);
+  assert.equal(requests.length, 3);
+  assert.equal(requests[2].mediaUrl, longMedia.url);
+  assert.equal(requests[2].mediaType, longMedia.type);
+  assert.equal(requests[2].text.length > 1024, true);
+  assert.equal(requests[2].text.length <= 4096, true);
+
+  console.log("Telegram integration test passed: scheduled=901, immediate=902, long-media=903.");
 } catch (error) {
   console.error(appLogs);
   throw error;
