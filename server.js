@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-telegram-scheduler-diagnostics-v42";
+const APP_BUILD = "2026-07-19-telegram-sites-auth-v43";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -617,6 +617,7 @@ function validateConfigBody(body = {}) {
   const allowed = {
     telegramBotToken: 120,
     telegramChatId: 160,
+    telegramSchedulerAccessToken: 500,
     instagramAccessToken: 600,
     instagramUserId: 160
   };
@@ -716,6 +717,7 @@ function defaultUserSettings() {
     model: DEFAULT_AI_MODEL,
     telegramBotTokenEnc: "",
     telegramChatId: "",
+    telegramSchedulerAccessTokenEnc: "",
     // Instagram Graph API
     instagramAccessTokenEnc: "",
     instagramUserId: "",
@@ -745,6 +747,9 @@ function getUserSettingsForServer(user) {
     model: settings.model || DEFAULT_AI_MODEL,
     telegramBotToken: decryptSecret(settings.telegramBotTokenEnc) || process.env.TELEGRAM_BOT_TOKEN || "",
     telegramChatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID || (TELEGRAM_EXTERNAL_SCHEDULER ? "@motorports" : ""),
+    telegramSchedulerAccessToken: decryptSecret(settings.telegramSchedulerAccessTokenEnc)
+      || process.env.TELEGRAM_SITES_ACCESS_TOKEN
+      || "",
     instagramAccessToken: decryptSecret(settings.instagramAccessTokenEnc) || "",
     instagramUserId: settings.instagramUserId || "",
     youtubeRefreshToken: decryptSecret(settings.youtubeRefreshTokenEnc) || "",
@@ -771,6 +776,7 @@ function getUserSettingsForClient(user) {
     model: serverSettings.model,
     telegramBotToken: maskKey(serverSettings.telegramBotToken),
     telegramChatId: serverSettings.telegramChatId,
+    telegramSchedulerAccessToken: maskKey(serverSettings.telegramSchedulerAccessToken),
     instagramAccessToken: maskKey(serverSettings.instagramAccessToken),
     instagramUserId: serverSettings.instagramUserId,
     instagramReady: Boolean(serverSettings.instagramAccessToken && serverSettings.instagramUserId),
@@ -1882,6 +1888,7 @@ app.post("/api/config", requireAuth, (req, res) => {
   const {
     telegramBotToken,
     telegramChatId,
+    telegramSchedulerAccessToken,
     instagramAccessToken,
     instagramUserId
   } = validateConfigBody(req.body || {});
@@ -1902,6 +1909,14 @@ app.post("/api/config", requireAuth, (req, res) => {
 
     if (telegramChatId !== undefined) {
       user.settings.telegramChatId = String(telegramChatId || "").trim();
+    }
+
+    if (telegramSchedulerAccessToken !== undefined) {
+      const trimmed = String(telegramSchedulerAccessToken).trim();
+      const isMasked = trimmed.includes("...") || trimmed.includes("***");
+      if (!(isMasked && user.settings.telegramSchedulerAccessTokenEnc)) {
+        user.settings.telegramSchedulerAccessTokenEnc = encryptSecret(trimmed);
+      }
     }
 
     if (instagramAccessToken !== undefined) {
@@ -1952,7 +1967,9 @@ app.get("/api/telegram/scheduler-status", requireAuth, (req, res) => {
 
 app.post("/api/telegram/run-scheduler", requireAuth, publishLimiter, async (req, res) => {
   try {
-    const result = await triggerExternalTelegramScheduler();
+    const result = await triggerExternalTelegramScheduler({
+      sitesAccessToken: cleanOptionalText(req.body?.sitesAccessToken, 500) || ""
+    });
     res.json({ ok: true, ...result, state: externalTelegramSchedulerState });
   } catch (error) {
     res.status(502).json({
@@ -2808,13 +2825,34 @@ async function telegramRelayCall(payload, botToken) {
   return data;
 }
 
-async function triggerExternalTelegramScheduler() {
+function storedTelegramSchedulerAccessToken() {
+  const envToken = String(process.env.TELEGRAM_SITES_ACCESS_TOKEN || "").trim();
+  if (envToken) return envToken;
+
+  try {
+    const store = loadStore();
+    for (const user of store.users || []) {
+      const token = String(getUserSettingsForServer(user).telegramSchedulerAccessToken || "").trim();
+      if (token) return token;
+    }
+  } catch (error) {
+    console.error("[Scheduler] Не удалось прочитать служебный токен:", error.message);
+  }
+  return "";
+}
+
+async function triggerExternalTelegramScheduler(options = {}) {
   externalTelegramSchedulerState.lastAttemptAt = new Date().toISOString();
   try {
     const botToken = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
     if (!botToken) {
       throw new Error("Не настроен ключ внешнего Telegram-планировщика.");
     }
+    const sitesAccessToken = String(
+      options.sitesAccessToken
+      || storedTelegramSchedulerAccessToken()
+      || ""
+    ).trim();
 
     const timestamp = Date.now().toString();
     const signature = crypto
@@ -2826,9 +2864,12 @@ async function triggerExternalTelegramScheduler() {
         method: "GET",
         headers: {
           Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; ContentFactoryScheduler/1.0)",
-          "X-Relay-Timestamp": timestamp,
-          "X-Relay-Signature": signature
+        "User-Agent": "Mozilla/5.0 (compatible; ContentFactoryScheduler/1.0)",
+        "X-Relay-Timestamp": timestamp,
+        "X-Relay-Signature": signature,
+        ...(sitesAccessToken
+          ? { "OAI-Sites-Authorization": `Bearer ${sitesAccessToken}` }
+          : {})
         },
         cache: "no-store"
       }),
