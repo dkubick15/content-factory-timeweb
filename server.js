@@ -42,10 +42,14 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-custom-telegram-relay-v44";
+const APP_BUILD = "2026-07-19-browser-telegram-trigger-v45";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
+).replace(/\/+$/, "");
+const TELEGRAM_BROWSER_SCHEDULER_URL = (
+  process.env.TELEGRAM_BROWSER_SCHEDULER_URL
+  || TELEGRAM_RELAY_URL
 ).replace(/\/+$/, "");
 const TELEGRAM_SCHEDULER_URL = (
   process.env.TELEGRAM_SCHEDULER_URL
@@ -1965,6 +1969,29 @@ app.get("/api/telegram/scheduler-status", requireAuth, (req, res) => {
   });
 });
 
+app.get("/api/telegram/scheduler-ticket", requireAuth, publishLimiter, (req, res) => {
+  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  if (!botToken) {
+    return res.status(503).json({
+      error: "Не настроен ключ внешнего Telegram-планировщика."
+    });
+  }
+
+  const timestamp = Date.now().toString();
+  const signature = crypto
+    .createHmac("sha256", botToken)
+    .update(`${timestamp}.scheduler`)
+    .digest("hex");
+
+  return res.json({
+    ok: true,
+    url: `${TELEGRAM_BROWSER_SCHEDULER_URL}/api/run-scheduler`,
+    timestamp,
+    signature,
+    expiresAt: Number(timestamp) + 5 * 60 * 1000
+  });
+});
+
 app.post("/api/telegram/run-scheduler", requireAuth, publishLimiter, async (req, res) => {
   try {
     const result = await triggerExternalTelegramScheduler({
@@ -2959,7 +2986,7 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
         }).queue[0];
         workspace.queue.unshift(storedPost);
       }
-      storedPost.status = "scheduled";
+      storedPost.status = TELEGRAM_SCHEDULED_STATUS;
       storedPost.state = statusLabel(storedPost.status);
       storedPost.scheduledAt = new Date().toISOString();
       storedPost.publishDate = datePartServer(storedPost.scheduledAt);

@@ -110,6 +110,19 @@ try {
   }));
   const token = login.token;
 
+  const schedulerTicket = await api("/api/telegram/scheduler-ticket", { token });
+  const expectedSchedulerSignature = crypto
+    .createHmac("sha256", BOT_TOKEN)
+    .update(`${schedulerTicket.timestamp}.scheduler`)
+    .digest("hex");
+  assert.equal(
+    schedulerTicket.url,
+    `http://127.0.0.1:${RELAY_PORT}/api/run-scheduler`
+  );
+  assert.equal(schedulerTicket.signature, expectedSchedulerSignature);
+  assert.equal(Number(schedulerTicket.expiresAt) > Number(schedulerTicket.timestamp), true);
+  assert.equal("botToken" in schedulerTicket, false);
+
   const scheduledId = "scheduled-test";
   await api("/api/queue", {
     method: "POST",

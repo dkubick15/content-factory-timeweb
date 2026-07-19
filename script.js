@@ -1,4 +1,4 @@
-// Build: 2026-07-19-single-scheduler-v38
+// Build: 2026-07-19-browser-telegram-trigger-v39
 document.addEventListener("DOMContentLoaded", () => {
   const TOKEN_KEY = "cf_full_token_v2";
   const USER_KEY = "cf_full_user_v2";
@@ -2293,7 +2293,7 @@ document.addEventListener("DOMContentLoaded", () => {
           await pushWorkspace();
           showToast("Материалы восстановлены после перезапуска сервера");
           render();
-          return;
+          return state;
         }
         state = { ...state, ...data.workspace };
         if (!["materials", "queue", "media", "project", "settings"].includes(state.activeTab)) {
@@ -2312,11 +2312,14 @@ document.addEventListener("DOMContentLoaded", () => {
         syncActiveTemplatePlatform();
         saveState();
         render();
+        return state;
       }
     } catch (e) {
       serverSyncReady = true;
       render();
+      return null;
     }
+    return state;
   }
   async function checkBackend(withToast = true) { try { const data = await request("/api/health", { public: true }); state.settings.backendStatus = (data.ok || data.raw === "ok") ? "работает" : "ошибка"; if (withToast) showToast("Сервер ОК"); render(); } catch (e) { state.settings.backendStatus = "ошибка"; if (withToast) showToast("Ошибка сервера"); render(); } }
   async function fetchConfig() { if (!token()) return; try { const data = await request("/api/config"); state.settings = { ...state.settings, ...data }; render(); } catch (e) { } }
@@ -2837,8 +2840,49 @@ document.addEventListener("DOMContentLoaded", () => {
     return result.telegram;
   }
 
+  async function triggerTelegramSchedulerFromBrowser() {
+    const ticket = await request("/api/telegram/scheduler-ticket");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 70000);
+
+    let response;
+    try {
+      response = await fetch(ticket.url, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "X-Relay-Timestamp": ticket.timestamp,
+          "X-Relay-Signature": ticket.signature
+        },
+        cache: "no-store",
+        credentials: "omit",
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error("Telegram не подтвердил публикацию за 70 секунд.");
+      }
+      throw new Error("Не удалось запустить публикацию в Telegram.");
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const text = await response.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = {};
+    }
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || `Telegram-планировщик: HTTP ${response.status}`);
+    }
+    return data;
+  }
+
   async function publishOne(id) {
     const post = state.queue.find(q => q.id === id); if (!post) return;
+    let relayOwnsState = false;
     post.platform = "telegram";
     post.contentFormat = post.contentFormat || "telegram";
     post.status = "publishing";
@@ -2852,11 +2896,27 @@ document.addEventListener("DOMContentLoaded", () => {
       const mediaPayload = media ? { url: media.url, type: media.type } : null;
       const result = await publishTelegramFromApp(post, mediaPayload);
       if (result?.queued) {
-        post.status = "scheduled";
+        post.status = "scheduled_relay";
         post.state = "Запланировано";
         post.scheduledAt = result.scheduledAt || new Date().toISOString();
         post.lastError = "";
-        showToast("Передано в Telegram · публикация в течение минуты");
+        post.claimId = "";
+        post.claimExpiresAt = 0;
+        await pushWorkspace();
+        relayOwnsState = true;
+
+        const schedulerResult = await triggerTelegramSchedulerFromBrowser();
+        const refreshed = await fetchWorkspace();
+        const currentPost = refreshed?.queue?.find((item) => item.id === id);
+        if (currentPost?.status === "published") {
+          showToast("Опубликовано в Telegram");
+        } else if (currentPost?.status === "error") {
+          showToast(cleanError(currentPost.lastError || "Telegram вернул ошибку"));
+        } else if (Number(schedulerResult.processed || 0) > 0) {
+          showToast("Telegram принял публикацию");
+        } else {
+          showToast("Материал в очереди — повтори публикацию через несколько секунд");
+        }
       } else {
         post.status = "published";
         post.state = "Опубликовано";
@@ -2866,14 +2926,21 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast("Опубликовано в Telegram");
       }
     } catch (e) {
-      post.status = "error";
-      post.state = "Ошибка";
-      post.lastError = cleanError(e.message);
-      showToast(cleanError(e.message));
+      if (relayOwnsState) {
+        post.status = "scheduled_relay";
+        post.state = "Запланировано";
+        post.lastError = "";
+        showToast(`${cleanError(e.message)} Материал остался в очереди.`);
+      } else {
+        post.status = "error";
+        post.state = "Ошибка";
+        post.lastError = cleanError(e.message);
+        showToast(cleanError(e.message));
+      }
     } finally {
       post.claimId = "";
       post.claimExpiresAt = 0;
-      await pushWorkspace();
+      if (!relayOwnsState) await pushWorkspace();
       render();
     }
   }
