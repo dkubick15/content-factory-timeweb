@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-chatgpt-first-workspace-v33";
+const APP_BUILD = "2026-07-19-chatgpt-session-tools-v34";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.camp-mustang.workers.dev"
@@ -709,7 +709,12 @@ function defaultUserSettings() {
     instagramUserId: "",
     // YouTube OAuth2
     youtubeRefreshTokenEnc: "",
-    youtubeChannelId: ""
+    youtubeChannelId: "",
+    chatgptConnectedAt: "",
+    chatgptLastMcpAt: "",
+    chatgptLastToolAt: "",
+    chatgptLastToolName: "",
+    chatgptLastImportAt: ""
   };
 }
 
@@ -731,7 +736,12 @@ function getUserSettingsForServer(user) {
     instagramAccessToken: decryptSecret(settings.instagramAccessTokenEnc) || "",
     instagramUserId: settings.instagramUserId || "",
     youtubeRefreshToken: decryptSecret(settings.youtubeRefreshTokenEnc) || "",
-    youtubeChannelId: settings.youtubeChannelId || ""
+    youtubeChannelId: settings.youtubeChannelId || "",
+    chatgptConnectedAt: settings.chatgptConnectedAt || "",
+    chatgptLastMcpAt: settings.chatgptLastMcpAt || "",
+    chatgptLastToolAt: settings.chatgptLastToolAt || "",
+    chatgptLastToolName: settings.chatgptLastToolName || "",
+    chatgptLastImportAt: settings.chatgptLastImportAt || ""
   };
 }
 
@@ -754,7 +764,12 @@ function getUserSettingsForClient(user) {
     instagramReady: Boolean(serverSettings.instagramAccessToken && serverSettings.instagramUserId),
     youtubeConnected: Boolean(serverSettings.youtubeRefreshToken),
     youtubeChannelId: serverSettings.youtubeChannelId,
-    youtubeOAuthEnabled: Boolean(YOUTUBE_CLIENT_ID && YOUTUBE_CLIENT_SECRET)
+    youtubeOAuthEnabled: Boolean(YOUTUBE_CLIENT_ID && YOUTUBE_CLIENT_SECRET),
+    chatgptConnectedAt: serverSettings.chatgptConnectedAt,
+    chatgptLastMcpAt: serverSettings.chatgptLastMcpAt,
+    chatgptLastToolAt: serverSettings.chatgptLastToolAt,
+    chatgptLastToolName: serverSettings.chatgptLastToolName,
+    chatgptLastImportAt: serverSettings.chatgptLastImportAt
   };
 }
 
@@ -1766,6 +1781,7 @@ app.get("/api/config", requireAuth, (req, res) => {
     telegramManagedExternally: TELEGRAM_EXTERNAL_SCHEDULER,
     telegramSchedulerIntervalMinutes: 1,
     chatgptAppReady: true,
+    chatgptConnected: Boolean(settings.chatgptConnectedAt || settings.chatgptLastMcpAt),
     chatgptMcpUrl,
     instagramReady: settings.instagramReady,
     youtubeConnected: settings.youtubeConnected,

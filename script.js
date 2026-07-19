@@ -1,4 +1,4 @@
-// Build: 2026-07-19-chatgpt-first-workspace-v33
+// Build: 2026-07-19-chatgpt-session-tools-v34
 document.addEventListener("DOMContentLoaded", () => {
   const TOKEN_KEY = "cf_full_token_v2";
   const USER_KEY = "cf_full_user_v2";
@@ -304,6 +304,12 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       showAuth();
     }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden || !token()) return;
+      fetchConfig();
+      fetchWorkspace();
+    });
   }
 
   function icon(path) {
@@ -578,6 +584,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const value = new Date(`${date}T${time}:00`);
     return Number.isNaN(value.getTime()) ? "" : value.toISOString();
   }
+
+  function formatConnectionTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+  }
+
   function ensurePlanner() {
     if (!state.planner) state.planner = clone(defaultState.planner);
     if (!state.planner.publishDate || state.planner.publishDate < todayInputValue()) state.planner.publishDate = todayInputValue();
@@ -1521,6 +1535,17 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
   }
 
+  function buildChatgptPrompt() {
+    return [
+      `Используй подключённое приложение «Контент-завод» и подготовь для проекта ${activeProject()?.name || "Motor Port"} один сильный пост для Telegram.`,
+      "Сначала вызови get_motor_port_context и используй данные проекта.",
+      "Нужен plain text без Markdown, символов # и ##: заголовок, полезный основной текст, теги и подходящая картинка.",
+      "Сначала покажи мне весь комплект для проверки.",
+      "После моей фразы «Сохрани в Контент-завод» обязательно вызови import_content_package и дождись подтверждения сохранения.",
+      "Если этих двух инструментов нет в текущем чате, сразу скажи мне включить приложение «Контент-завод» в меню приложений, а не выдавай комплект как будто он будет сохранён."
+    ].join("\n");
+  }
+
   function renderMaterials() {
     const idea = selectedIdea();
     const content = selectedContent();
@@ -1531,7 +1556,38 @@ document.addEventListener("DOMContentLoaded", () => {
       body: content.body,
       tags: content.tags
     }).length;
-    const chatgptPrompt = `Подготовь для проекта ${activeProject()?.name || "Motor Port"} один сильный пост для Telegram: plain text без Markdown и символов ##, с заголовком, полезным основным текстом и подходящей картинкой. После моей проверки сохрани материал в Контент-завод.`;
+    const chatgptPrompt = buildChatgptPrompt();
+    const chatgptLastImportAt = formatConnectionTime(state.settings.chatgptLastImportAt);
+    const chatgptLastToolAt = formatConnectionTime(state.settings.chatgptLastToolAt);
+    const chatgptLastMcpAt = formatConnectionTime(state.settings.chatgptLastMcpAt);
+    const chatgptConnected = Boolean(
+      state.settings.chatgptConnected
+      || state.settings.chatgptConnectedAt
+      || state.settings.chatgptLastMcpAt
+    );
+    const chatgptStatus = chatgptLastImportAt
+      ? {
+          title: "Сохранение в черновики работает",
+          text: `Последний комплект передан ${chatgptLastImportAt}.`,
+          chip: "Проверено"
+        }
+      : chatgptLastToolAt
+        ? {
+            title: "ChatGPT вызывает инструменты проекта",
+            text: `Последний вызов был ${chatgptLastToolAt}.`,
+            chip: "На связи"
+          }
+        : chatgptLastMcpAt
+          ? {
+              title: "ChatGPT видит Контент-завод",
+              text: `Инструменты приложения загружены ${chatgptLastMcpAt}.`,
+              chip: "На связи"
+            }
+          : {
+              title: chatgptConnected ? "Аккаунт привязан, но чат ещё не проверен" : "Открой чат с включённым Контент-заводом",
+              text: "Обычный чат без приложения не получает инструмент сохранения.",
+              chip: chatgptConnected ? "Нужен чат" : "Не проверено"
+            };
 
     return `
       <section class="page-head">
@@ -1541,18 +1597,18 @@ document.addEventListener("DOMContentLoaded", () => {
           <p class="text">Создай текст и картинку в ChatGPT, проверь здесь и отправь в Telegram сразу или по расписанию.</p>
         </div>
         <div class="actions">
-          <a class="btn primary" href="https://chatgpt.com/" target="_blank" rel="noopener">Открыть ChatGPT</a>
+          <button class="btn primary" type="button" data-action="show-chatgpt-guide">Открыть правильный чат</button>
           <button class="btn" type="button" data-action="copy-text-custom" data-text="${escapeHtml(chatgptPrompt)}">Скопировать задание</button>
           <button class="btn" type="button" data-action="new-material">Новый материал</button>
         </div>
       </section>
 
-      <div class="connection-strip">
+      <div class="connection-strip ${chatgptLastMcpAt ? "" : "is-warn"}">
         <div>
-          <strong>ChatGPT подключён к проекту</strong>
-          <span>Готовые тексты и изображения автоматически появляются в этом списке.</span>
+          <strong>${escapeHtml(chatgptStatus.title)}</strong>
+          <span>${escapeHtml(chatgptStatus.text)}</span>
         </div>
-        <span class="chip ok">Подключено</span>
+        <span class="chip ${chatgptLastMcpAt ? "ok" : "info"}">${escapeHtml(chatgptStatus.chip)}</span>
       </div>
 
       ${selectedMaterialIds.size ? `
@@ -1950,8 +2006,56 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
   }
 
+  function showChatgptGuide() {
+    const chatgptPrompt = buildChatgptPrompt();
+    mountModal(`
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h2 class="modal-title">Открыть ChatGPT с инструментом сохранения</h2>
+            <button class="btn" type="button" data-action="close-modal" aria-label="Закрыть">Закрыть</button>
+          </div>
+          <div class="modal-body" data-stop-propagation>
+            <div class="form">
+              <p class="text"><strong>Важно:</strong> подключение действует только в чате, где выбрано приложение «Контент-завод».</p>
+              <ol class="setup-steps">
+                <li>Открой новый чат ChatGPT.</li>
+                <li>В меню инструментов или приложений рядом с полем ввода выбери «Контент-завод».</li>
+                <li>Вставь задание и дождись, пока ChatGPT получит контекст проекта.</li>
+                <li>После проверки напиши: «Сохрани в Контент-завод» и дождись подтверждения о созданном черновике.</li>
+              </ol>
+              <div class="notice warn">Если чат пишет «инструмент недоступен», приложение не включено именно в этом чате. Открой новый чат и выбери его снова.</div>
+              <div class="actions">
+                <a class="btn primary" href="https://chatgpt.com/" target="_blank" rel="noopener">Открыть новый чат ChatGPT</a>
+                <button class="btn" type="button" data-action="copy-text-custom" data-text="${escapeHtml(chatgptPrompt)}">Скопировать задание</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
   function renderSettings() {
     const s = state.settings;
+    const chatgptLastImportAt = formatConnectionTime(s.chatgptLastImportAt);
+    const chatgptLastToolAt = formatConnectionTime(s.chatgptLastToolAt);
+    const chatgptLastMcpAt = formatConnectionTime(s.chatgptLastMcpAt);
+    const chatgptVerified = Boolean(chatgptLastMcpAt);
+    const chatgptStatusTitle = chatgptLastImportAt
+      ? "Сохранение черновиков проверено"
+      : chatgptLastToolAt
+        ? "Инструменты приложения работают"
+        : chatgptVerified
+          ? "ChatGPT видит приложение"
+          : "Сервер готов, чат ещё не проверен";
+    const chatgptStatusText = chatgptLastImportAt
+      ? `Последняя передача: ${chatgptLastImportAt}.`
+      : chatgptLastToolAt
+        ? `Последний вызов: ${chatgptLastToolAt}.`
+        : chatgptLastMcpAt
+          ? `Последний контакт: ${chatgptLastMcpAt}.`
+          : "Открой новый чат и включи «Контент-завод» в меню приложений.";
     return `
       <section class="page-head">
         <div>
@@ -1978,14 +2082,15 @@ document.addEventListener("DOMContentLoaded", () => {
           <h2 class="title">ChatGPT</h2>
           <div class="form mt-16">
             <div class="service-status">
-              <span class="status-dot ${s.chatgptAppReady ? "is-ok" : "is-bad"}"></span>
-              <div><strong>${s.chatgptAppReady ? "Интеграция работает" : "Проверяем интеграцию"}</strong><span>ChatGPT читает проект и сохраняет текст вместе с картинкой.</span></div>
+              <span class="status-dot ${chatgptVerified ? "is-ok" : "is-bad"}"></span>
+              <div><strong>${escapeHtml(chatgptStatusTitle)}</strong><span>${escapeHtml(chatgptStatusText)}</span></div>
             </div>
             <label class="field">
               <span class="label">Адрес подключения</span>
               <input class="input" value="${escapeHtml(s.chatgptMcpUrl || "")}" readonly>
             </label>
             <div class="actions">
+              <button class="btn primary" type="button" data-action="show-chatgpt-guide">Открыть правильный чат</button>
               <button class="btn" type="button" data-action="copy-text-custom" data-text="${escapeHtml(s.chatgptMcpUrl || "")}">Скопировать адрес</button>
             </div>
           </div>
@@ -2861,6 +2966,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (a === "tab") { state.activeTab = t.dataset.tab; closeNavMenu(); render(); scrollToTop(); return; }
     if (a === "logout") { logout(); return; }
     if (a === "new-material") { createMaterial(); return; }
+    if (a === "show-chatgpt-guide") { showChatgptGuide(); return; }
     if (a === "apply-template") { applyTemplateById(t.dataset.template); render(); return; }
     if (a === "generate") { generate(); return; }
     if (a === "fill-brief-template") { makeBriefTemplate(); return; }

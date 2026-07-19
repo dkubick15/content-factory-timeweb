@@ -438,6 +438,20 @@ function createContentFactoryMcpServer(context) {
     maxImageBytes
   } = context;
 
+  const markChatGptActivity = (store, user, toolName, imported = false) => {
+    const now = new Date().toISOString();
+    user.settings = {
+      ...(user.settings || {}),
+      chatgptConnectedAt: user.settings?.chatgptConnectedAt || now,
+      chatgptLastMcpAt: now,
+      chatgptLastToolAt: now,
+      chatgptLastToolName: toolName
+    };
+    if (imported) {
+      user.settings.chatgptLastImportAt = now;
+    }
+  };
+
   const server = new McpServer(
     {
       name: "content-factory-motor-port",
@@ -446,9 +460,12 @@ function createContentFactoryMcpServer(context) {
     {
       instructions: [
         "Это личное приложение пользователя для проекта Motor Port.",
-        "Перед созданием материала вызови get_motor_port_context.",
+        "В начале работы с материалом обязательно вызови get_motor_port_context.",
         "Создавай русский plain text без Markdown: никаких #, ##, **, обратных кавычек и markdown-ссылок.",
-        "Когда пользователь одобрил текст и изображение, вызови import_content_package ровно один раз.",
+        "Фразы пользователя «сохрани», «передай в Контент-завод», «добавь в черновики» означают обязательный вызов import_content_package.",
+        "Когда пользователь одобрил текст и изображение, вызови import_content_package ровно один раз и дождись результата.",
+        "Если import_content_package присутствует в списке инструментов, не говори, что сохранение недоступно.",
+        "Если инструментов приложения действительно нет в текущем чате, прямо попроси пользователя включить приложение «Контент-завод» в меню приложений этого чата.",
         "Инструмент сохраняет черновик и медиа, но сам ничего не публикует в Telegram."
       ].join(" ")
     }
@@ -490,7 +507,11 @@ function createContentFactoryMcpServer(context) {
       const user = store.users.find((item) => item.id === access.sub);
       if (!user) return mcpError("Аккаунт «Контент-завода» не найден.");
       const workspaceUser = resolveWorkspaceUser(store, user);
-      const workspace = sanitizeWorkspace(workspaceUser.workspace || {});
+      const storedUser = store.users.find((item) => item.id === workspaceUser.id);
+      if (!storedUser) return mcpError("Рабочее пространство не найдено.");
+      markChatGptActivity(store, storedUser, "get_motor_port_context");
+      saveStore(store);
+      const workspace = sanitizeWorkspace(storedUser.workspace || {});
       const project = workspace.projects.find(
         (item) => item.id === workspace.activeProjectId
       ) || workspace.projects[0] || {};
@@ -544,8 +565,8 @@ function createContentFactoryMcpServer(context) {
   server.registerTool(
     "import_content_package",
     {
-      title: "Передать текст и изображение в Контент-завод",
-      description: "Сохраняет одобренный пользователем текст и сгенерированное изображение как новый черновик Motor Port. Не публикует материал автоматически.",
+      title: "Сохранить черновик в Контент-заводе",
+      description: "Обязательный инструмент для команд «сохрани», «передай в Контент-завод» и «добавь в черновики». Сохраняет одобренный текст и сгенерированное изображение как новый черновик Motor Port, но не публикует его автоматически.",
       inputSchema: {
         request_id: z.string().min(8).max(120)
           .describe("Уникальный ID этой передачи. Повторный вызов с тем же ID не создаст дубль."),
@@ -589,6 +610,8 @@ function createContentFactoryMcpServer(context) {
       const workspaceUser = resolveWorkspaceUser(store, user);
       const storedUser = store.users.find((item) => item.id === workspaceUser.id);
       if (!storedUser) return mcpError("Рабочее пространство не найдено.");
+      markChatGptActivity(store, storedUser, "import_content_package");
+      saveStore(store);
 
       const workspace = sanitizeWorkspace(storedUser.workspace || {});
       const requestId = cleanText(args.request_id, 120);
@@ -605,6 +628,8 @@ function createContentFactoryMcpServer(context) {
           existingContent.body,
           existingContent.tags
         ].filter(Boolean).join("\n\n").length;
+        markChatGptActivity(store, storedUser, "import_content_package", true);
+        saveStore(store);
         const structuredContent = {
           ok: true,
           duplicate: true,
@@ -708,6 +733,7 @@ function createContentFactoryMcpServer(context) {
         storedUser.workspace = sanitizeWorkspace(workspace);
         storedUser.queue = storedUser.workspace.queue;
         storedUser.updatedAt = new Date().toISOString();
+        markChatGptActivity(store, storedUser, "import_content_package", true);
         saveStore(store);
 
         const totalCharacters = [headline, body, tags].filter(Boolean).join("\n\n").length;
@@ -977,6 +1003,15 @@ export function attachChatGptApp(app, options) {
         });
       }
 
+      const connectedUser = store.users.find((item) => item.id === stored.userId);
+      const connectedAt = new Date().toISOString();
+      connectedUser.settings = {
+        ...(connectedUser.settings || {}),
+        chatgptConnectedAt: connectedUser.settings?.chatgptConnectedAt || connectedAt
+      };
+      connectedUser.updatedAt = connectedAt;
+      saveStore(store);
+
       const tokenArgs = {
         userId: stored.userId,
         clientId,
@@ -1063,9 +1098,21 @@ export function attachChatGptApp(app, options) {
     }
 
     const store = loadStore();
-    if (!store.users.some((item) => item.id === access.sub)) {
+    const accessUser = store.users.find((item) => item.id === access.sub);
+    if (!accessUser) {
       return sendOauthChallenge(req, res);
     }
+    const workspaceUser = resolveWorkspaceUser(store, accessUser);
+    const storedUser = store.users.find((item) => item.id === workspaceUser.id);
+    if (!storedUser) return sendOauthChallenge(req, res);
+    const lastMcpAt = new Date().toISOString();
+    storedUser.settings = {
+      ...(storedUser.settings || {}),
+      chatgptConnectedAt: storedUser.settings?.chatgptConnectedAt || lastMcpAt,
+      chatgptLastMcpAt: lastMcpAt
+    };
+    storedUser.updatedAt = lastMcpAt;
+    saveStore(store);
 
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");

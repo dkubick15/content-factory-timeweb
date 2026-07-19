@@ -1664,6 +1664,11 @@ body {
   background: var(--success-bg);
 }
 
+.connection-strip.is-warn {
+  border-color: rgba(250, 204, 21, 0.35);
+  background: rgba(250, 204, 21, 0.06);
+}
+
 .connection-strip > div,
 .batch-bar > div:first-child {
   display: flex;
@@ -1675,6 +1680,12 @@ body {
 .batch-bar span {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.setup-steps {
+  margin: 0;
+  padding-left: 22px;
+  line-height: 1.65;
 }
 
 .batch-bar {
