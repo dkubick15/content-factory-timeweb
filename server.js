@@ -42,12 +42,13 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-telegram-fallback-v37";
+const APP_BUILD = "2026-07-19-single-scheduler-v38";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.camp-mustang.workers.dev"
 ).replace(/\/+$/, "");
 const TELEGRAM_EXTERNAL_SCHEDULER = process.env.TELEGRAM_EXTERNAL_SCHEDULER !== "false";
+const TELEGRAM_SCHEDULED_STATUS = TELEGRAM_EXTERNAL_SCHEDULER ? "scheduled" : "scheduled_local";
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -1592,8 +1593,11 @@ function sanitizeWorkspace(input = {}) {
     const publishTime = post.publishTime || timePartServer(post.scheduledAt);
     const contentFormat = post.contentFormat || (post.platform === "dzen" ? "dzen" : "telegram");
     const platform = "telegram";
-    const sourceStatus = post.status || (post.state === "Опубликовано" ? "published" : "scheduled");
-    const status = sourceStatus === "ready" ? "scheduled" : sourceStatus;
+    const sourceStatus = post.status || (post.state === "Опубликовано" ? "published" : TELEGRAM_SCHEDULED_STATUS);
+    const normalizedStatus = sourceStatus === "ready" ? TELEGRAM_SCHEDULED_STATUS : sourceStatus;
+    const status = !TELEGRAM_EXTERNAL_SCHEDULER && normalizedStatus === "scheduled"
+      ? TELEGRAM_SCHEDULED_STATUS
+      : normalizedStatus;
     return {
       ...post,
       id: String(post.id || crypto.randomUUID()),
@@ -1629,6 +1633,7 @@ function statusLabel(status) {
     draft: "Черновик",
     ready: "Готово к публикации",
     scheduled: "Запланировано",
+    scheduled_local: "Запланировано",
     publishing: "Публикуется",
     published: "Опубликовано",
     error: "Ошибка"
@@ -3207,25 +3212,25 @@ async function runScheduledPublishing() {
       let changed = false;
 
       for (const post of queue) {
-        if (!post.status) post.status = post.state === "Опубликовано" ? "published" : "scheduled";
+        if (!post.status) post.status = post.state === "Опубликовано" ? "published" : TELEGRAM_SCHEDULED_STATUS;
         if (post.platform === "dzen") {
           post.contentFormat = "dzen";
           post.platform = "telegram";
-          if (post.status === "ready") post.status = "scheduled";
+          if (post.status === "ready") post.status = TELEGRAM_SCHEDULED_STATUS;
           post.state = statusLabel(post.status);
           changed = true;
         }
         const platform = post.platform || "telegram";
 
         if (post.status === "publishing" && Number(post.claimExpiresAt || 0) <= now) {
-          post.status = "scheduled";
+          post.status = TELEGRAM_SCHEDULED_STATUS;
           post.state = statusLabel(post.status);
           post.claimId = "";
           post.claimExpiresAt = 0;
           changed = true;
         }
         if (platform === "telegram" && post.status === "ready") {
-          post.status = "scheduled";
+          post.status = TELEGRAM_SCHEDULED_STATUS;
           post.state = statusLabel(post.status);
           changed = true;
         }
@@ -3233,7 +3238,7 @@ async function runScheduledPublishing() {
           continue;
         }
 
-        if (post.status !== "scheduled" || !post.scheduledAt) continue;
+        if (post.status !== TELEGRAM_SCHEDULED_STATUS || !post.scheduledAt) continue;
         const postTime = new Date(post.scheduledAt).getTime();
         if (!Number.isFinite(postTime) || postTime > now) continue;
 
@@ -3333,7 +3338,7 @@ async function runScheduledPublishing() {
           post.claimExpiresAt = 0;
           post.lastError = String(pubErr.message || "Ошибка публикации");
           if (platform === "telegram" && attempts < 3) {
-            post.status = "scheduled";
+            post.status = TELEGRAM_SCHEDULED_STATUS;
             post.scheduledAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
           } else {
             post.status = "error";
