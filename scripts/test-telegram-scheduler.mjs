@@ -71,6 +71,7 @@ const app = spawn(process.execPath, ["server.js"], {
     DEMO_EMAIL: "kubik",
     DEMO_PASSWORD: "kubik",
     TELEGRAM_RELAY_URL: `http://127.0.0.1:${RELAY_PORT}`,
+    TELEGRAM_BROWSER_SCHEDULER_URL: `http://127.0.0.1:${RELAY_PORT}`,
     TELEGRAM_PUBLISH_MODE: "direct",
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     TELEGRAM_CHAT_ID: "@test-channel",

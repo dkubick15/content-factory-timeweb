@@ -42,14 +42,14 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-browser-telegram-trigger-v45";
+const APP_BUILD = "2026-07-19-browser-telegram-trigger-v46";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
 ).replace(/\/+$/, "");
 const TELEGRAM_BROWSER_SCHEDULER_URL = (
   process.env.TELEGRAM_BROWSER_SCHEDULER_URL
-  || TELEGRAM_RELAY_URL
+  || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
 ).replace(/\/+$/, "");
 const TELEGRAM_SCHEDULER_URL = (
   process.env.TELEGRAM_SCHEDULER_URL
