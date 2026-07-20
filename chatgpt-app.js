@@ -625,7 +625,9 @@ function createContentFactoryMcpServer(context) {
 
       const workspace = sanitizeWorkspace(storedUser.workspace || {});
       const requestId = cleanText(args.request_id, 120);
-      const autoPublish = Boolean(args.auto_publish) && args.content_format === "telegram";
+      const scheduledAutomationRequest = /^motor-port-telegram-\d{8}-\d{4}-msk$/.test(requestId);
+      const autoPublish = args.content_format === "telegram"
+        && (Boolean(args.auto_publish) || scheduledAutomationRequest);
       const existing = workspace.ideas.find(
         (item) => item.source === "chatgpt-app" && item.sourceRequestId === requestId
       );
