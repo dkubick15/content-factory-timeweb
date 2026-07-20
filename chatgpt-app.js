@@ -464,9 +464,10 @@ function createContentFactoryMcpServer(context) {
         "Создавай русский plain text без Markdown: никаких #, ##, **, обратных кавычек и markdown-ссылок.",
         "Фразы пользователя «сохрани», «передай в Контент-завод», «добавь в черновики» означают обязательный вызов import_content_package.",
         "Когда пользователь одобрил текст и изображение, вызови import_content_package ровно один раз и дождись результата.",
+        "Если пользователь явно одобрил автоматические публикации без ручного согласования, для запусков расписания передавай auto_publish=true.",
         "Если import_content_package присутствует в списке инструментов, не говори, что сохранение недоступно.",
         "Если инструментов приложения действительно нет в текущем чате, прямо попроси пользователя включить приложение «Контент-завод» в меню приложений этого чата.",
-        "Инструмент сохраняет черновик и медиа, но сам ничего не публикует в Telegram."
+        "Без auto_publish инструмент сохраняет черновик. С auto_publish=true он также ставит Telegram-пост в очередь немедленной публикации."
       ].join(" ")
     }
   );
@@ -489,6 +490,7 @@ function createContentFactoryMcpServer(context) {
       outputSchema: {
         project: z.record(z.string()),
         publication_rules: z.array(z.string()),
+        recent_headlines: z.array(z.string()),
         content_factory_url: z.string()
       },
       annotations: {
@@ -540,8 +542,12 @@ function createContentFactoryMcpServer(context) {
           "Для списков используй символ •.",
           "Заголовок, тело и теги вместе должны помещаться в 4096 знаков Telegram.",
           "Изображение должно иллюстрировать реальную ситуацию материала, без текста и выдуманных деталей.",
-          "Сначала покажи комплект пользователю. Импортируй его только после явного одобрения."
+          "Сначала покажи комплект пользователю. Исключение: заранее одобренная пользователем автоматическая серия публикаций по расписанию."
         ],
+        recent_headlines: [...new Set([
+          ...workspace.ideas.map((item) => item?.title || item?.formats?.telegram?.headline || ""),
+          ...workspace.queue.map((item) => item?.title || "")
+        ].map((item) => plainPublicationHeadline(item)).filter(Boolean))].slice(0, 24),
         content_factory_url: `${baseUrl}/`
       };
 
@@ -565,8 +571,8 @@ function createContentFactoryMcpServer(context) {
   server.registerTool(
     "import_content_package",
     {
-      title: "Сохранить черновик в Контент-заводе",
-      description: "Обязательный инструмент для команд «сохрани», «передай в Контент-завод» и «добавь в черновики». Сохраняет одобренный текст и сгенерированное изображение как новый черновик Motor Port, но не публикует его автоматически.",
+      title: "Сохранить или опубликовать материал",
+      description: "Сохраняет материал Motor Port в Контент-заводе. По умолчанию создаёт черновик. Передавай auto_publish=true только для заранее одобренной пользователем автоматической публикации в Telegram.",
       inputSchema: {
         request_id: z.string().min(8).max(120)
           .describe("Уникальный ID этой передачи. Повторный вызов с тем же ID не создаст дубль."),
@@ -574,6 +580,8 @@ function createContentFactoryMcpServer(context) {
         body: z.string().min(20).max(10000),
         tags: z.string().max(1000).optional(),
         content_format: z.enum(["dzen", "telegram"]).default("dzen"),
+        auto_publish: z.boolean().default(false)
+          .describe("Поставить Telegram-пост в очередь немедленной публикации. Использовать только после явного одобрения автопубликации пользователем."),
         image: imageFileSchema.optional()
       },
       outputSchema: {
@@ -584,11 +592,13 @@ function createContentFactoryMcpServer(context) {
         image_saved: z.boolean(),
         telegram_ready: z.boolean(),
         total_characters: z.number(),
+        queued: z.boolean(),
+        scheduled_at: z.string(),
         content_factory_url: z.string()
       },
       annotations: {
         readOnlyHint: false,
-        openWorldHint: false,
+        openWorldHint: true,
         destructiveHint: false,
         idempotentHint: true
       },
@@ -596,7 +606,7 @@ function createContentFactoryMcpServer(context) {
         ...oauthMeta,
         "openai/fileParams": ["image"],
         "openai/toolInvocation/invoking": "Передаю комплект в Контент-завод…",
-        "openai/toolInvocation/invoked": "Черновик и изображение сохранены"
+        "openai/toolInvocation/invoked": "Материал передан в Контент-завод"
       }
     },
     async (args) => {
@@ -615,6 +625,7 @@ function createContentFactoryMcpServer(context) {
 
       const workspace = sanitizeWorkspace(storedUser.workspace || {});
       const requestId = cleanText(args.request_id, 120);
+      const autoPublish = Boolean(args.auto_publish) && args.content_format === "telegram";
       const existing = workspace.ideas.find(
         (item) => item.source === "chatgpt-app" && item.sourceRequestId === requestId
       );
@@ -628,6 +639,34 @@ function createContentFactoryMcpServer(context) {
           existingContent.body,
           existingContent.tags
         ].filter(Boolean).join("\n\n").length;
+        if (autoPublish && totalCharacters > 4096) {
+          return mcpError(`Публикация длиннее лимита Telegram: ${totalCharacters} из 4096 знаков.`);
+        }
+        let queuedPost = workspace.queue.find(
+          (item) => item.sourceIdeaId === existing.id && item.platform === "telegram"
+        );
+        if (autoPublish && !queuedPost) {
+          const scheduledAt = new Date().toISOString();
+          queuedPost = {
+            id: `q_${existing.id}`,
+            projectId: workspace.activeProjectId,
+            sourceIdeaId: existing.id,
+            platform: "telegram",
+            contentFormat: "telegram",
+            title: plainPublicationHeadline(existingContent.headline || existing.title || ""),
+            body: plainPublicationText(existingContent.body || ""),
+            tags: plainPublicationText(existingContent.tags || ""),
+            mediaId: existing.mediaId || "",
+            status: "scheduled",
+            state: "Запланировано",
+            publishDate: scheduledAt.slice(0, 10),
+            publishTime: scheduledAt.slice(11, 16),
+            scheduledAt
+          };
+          workspace.queue = [queuedPost, ...workspace.queue].slice(0, 300);
+          storedUser.workspace = sanitizeWorkspace(workspace);
+          storedUser.queue = storedUser.workspace.queue;
+        }
         markChatGptActivity(store, storedUser, "import_content_package", true);
         saveStore(store);
         const structuredContent = {
@@ -638,6 +677,8 @@ function createContentFactoryMcpServer(context) {
           image_saved: Boolean(existing.mediaId),
           telegram_ready: totalCharacters <= 4096,
           total_characters: totalCharacters,
+          queued: Boolean(queuedPost),
+          scheduled_at: queuedPost?.scheduledAt || "",
           content_factory_url: `${baseUrl}/`
         };
         return {
@@ -651,6 +692,10 @@ function createContentFactoryMcpServer(context) {
       const tags = plainPublicationText(args.tags || "");
       const contentFormat = args.content_format === "telegram" ? "telegram" : "dzen";
       if (!headline || !body) return mcpError("После очистки разметки заголовок или текст оказался пустым.");
+      const totalCharacters = [headline, body, tags].filter(Boolean).join("\n\n").length;
+      if (autoPublish && totalCharacters > 4096) {
+        return mcpError(`Публикация длиннее лимита Telegram: ${totalCharacters} из 4096 знаков.`);
+      }
 
       let mediaItem = null;
       let savedPath = "";
@@ -706,6 +751,30 @@ function createContentFactoryMcpServer(context) {
           }
         };
 
+        let queuedPost = null;
+        if (autoPublish) {
+          const scheduledAt = new Date().toISOString();
+          queuedPost = {
+            id: `q_${draftId}`,
+            projectId: workspace.activeProjectId,
+            sourceIdeaId: draftId,
+            platform: "telegram",
+            contentFormat: "telegram",
+            title: headline,
+            body,
+            tags,
+            mediaId: mediaItem?.id || "",
+            mediaUrl: mediaItem?.url || "",
+            mediaType: mediaItem?.type || "",
+            status: "scheduled",
+            state: "Запланировано",
+            publishDate: scheduledAt.slice(0, 10),
+            publishTime: scheduledAt.slice(11, 16),
+            scheduledAt
+          };
+          workspace.queue = [queuedPost, ...workspace.queue].slice(0, 300);
+        }
+
         workspace.ideas = [
           idea,
           ...workspace.ideas.filter((item) => item.id !== draftId)
@@ -724,7 +793,9 @@ function createContentFactoryMcpServer(context) {
             id: `log_${Date.now()}`,
             type: "good",
             time: new Date().toISOString(),
-            text: "Комплект импортирован из ChatGPT",
+            text: autoPublish
+              ? "Материал импортирован из ChatGPT и поставлен в очередь Telegram"
+              : "Комплект импортирован из ChatGPT",
             meta: mediaItem ? "Текст и изображение" : "Только текст"
           },
           ...workspace.logs
@@ -736,7 +807,6 @@ function createContentFactoryMcpServer(context) {
         markChatGptActivity(store, storedUser, "import_content_package", true);
         saveStore(store);
 
-        const totalCharacters = [headline, body, tags].filter(Boolean).join("\n\n").length;
         const structuredContent = {
           ok: true,
           duplicate: false,
@@ -745,6 +815,8 @@ function createContentFactoryMcpServer(context) {
           image_saved: Boolean(mediaItem),
           telegram_ready: totalCharacters <= 4096,
           total_characters: totalCharacters,
+          queued: Boolean(queuedPost),
+          scheduled_at: queuedPost?.scheduledAt || "",
           content_factory_url: `${baseUrl}/`
         };
 
@@ -752,9 +824,11 @@ function createContentFactoryMcpServer(context) {
           structuredContent,
           content: [{
             type: "text",
-            text: mediaItem
-              ? "Текст и изображение сохранены в «Контент-заводе» как черновик."
-              : "Текст сохранён в «Контент-заводе» как черновик без изображения."
+            text: autoPublish
+              ? "Текст сохранён и поставлен в очередь публикации Telegram."
+              : mediaItem
+                ? "Текст и изображение сохранены в «Контент-заводе» как черновик."
+                : "Текст сохранён в «Контент-заводе» как черновик без изображения."
           }]
         };
       } catch (error) {
