@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-19-browser-telegram-trigger-v46";
+const APP_BUILD = "2026-07-20-telegram-relay-csp-v47";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -225,7 +225,7 @@ app.use(helmet({
       styleSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       mediaSrc: ["'self'", "blob:", "https:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", TELEGRAM_BROWSER_SCHEDULER_URL],
       fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],

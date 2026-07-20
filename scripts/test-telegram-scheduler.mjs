@@ -105,6 +105,13 @@ async function api(pathname, options = {}) {
 
 try {
   await waitFor(() => api("/api/health?json=true"));
+  const pageResponse = await fetch(APP_URL);
+  const contentSecurityPolicy = pageResponse.headers.get("content-security-policy") || "";
+  assert.equal(
+    contentSecurityPolicy.includes(`connect-src 'self' http://127.0.0.1:${RELAY_PORT}`),
+    true
+  );
+
   const login = await waitFor(() => api("/api/auth/login", {
     method: "POST",
     body: { email: "kubik", password: "kubik" }
