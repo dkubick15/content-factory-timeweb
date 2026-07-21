@@ -12,6 +12,8 @@ const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const RELAY_URL = `http://127.0.0.1:${RELAY_PORT}`;
 const BOT_TOKEN = "test-bot-token";
 const accessHeaders = [];
+const telegramRequests = [];
+let allowAnonymousScheduler = true;
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,6 +35,21 @@ async function waitFor(check, timeoutMs = 12000) {
 }
 
 const relay = http.createServer((req, res) => {
+  if (req.method === "POST" && req.url === `/bot${BOT_TOKEN}/sendMessage`) {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      telegramRequests.push(payload);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: true,
+        result: { message_id: 951, chat: { id: -100123 } }
+      }));
+    });
+    return;
+  }
+
   const timestamp = String(req.headers["x-relay-timestamp"] || "");
   const signature = String(req.headers["x-relay-signature"] || "");
   const expected = crypto
@@ -46,8 +63,9 @@ const relay = http.createServer((req, res) => {
 
   const accessHeader = String(req.headers["oai-sites-authorization"] || "");
   accessHeaders.push(accessHeader);
-  res.writeHead(accessHeader ? 403 : 200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(accessHeader
+  const denied = Boolean(accessHeader) || !allowAnonymousScheduler;
+  res.writeHead(denied ? 403 : 200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(denied
     ? { error: "Forbidden" }
     : { ok: true, processed: 0 }));
 });
@@ -72,7 +90,8 @@ const app = spawn(process.execPath, ["server.js"], {
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     TELEGRAM_CHAT_ID: "@test-channel",
     TELEGRAM_SITES_ACCESS_TOKEN: "stale-access-token",
-    SCHEDULER_INTERVAL_MS: "3600000"
+    TELEGRAM_API_BASE_URL: RELAY_URL,
+    SCHEDULER_INTERVAL_MS: "500"
   },
   stdio: ["ignore", "pipe", "pipe"]
 });
@@ -112,7 +131,36 @@ try {
   assert.equal(result.state.lastError, "");
   assert.equal(Boolean(result.state.lastSuccessAt), true);
   assert.deepEqual(accessHeaders, ["Bearer stale-access-token", ""]);
-  console.log("Telegram scheduler access fallback test passed.");
+
+  accessHeaders.length = 0;
+  allowAnonymousScheduler = false;
+  await api("/api/queue", {
+    method: "POST",
+    token: login.token,
+    body: {
+      post: {
+        id: "external-direct-fallback-test",
+        title: "Прямая резервная публикация",
+        body: "Текст уходит напрямую, когда внешний планировщик недоступен.",
+        tags: "#test",
+        platform: "telegram",
+        contentFormat: "telegram",
+        status: "scheduled_relay",
+        scheduledAt: new Date(Date.now() - 1000).toISOString()
+      }
+    }
+  });
+
+  const publishedPost = await waitFor(async () => {
+    const workspace = await api("/api/workspace", { token: login.token });
+    const post = workspace.workspace.queue.find((item) => item.id === "external-direct-fallback-test");
+    return post?.status === "published" ? post : null;
+  });
+  assert.equal(publishedPost.telegramMessageId, 951);
+  assert.equal(telegramRequests.length, 1);
+  assert.equal(telegramRequests[0].chat_id, "@test-channel");
+  assert.equal(telegramRequests[0].text.includes("Прямая резервная публикация"), true);
+  console.log("Telegram scheduler access and direct publishing fallback tests passed.");
 } catch (error) {
   console.error(appLogs);
   throw error;

@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-21-telegram-scheduler-access-fallback-v50";
+const APP_BUILD = "2026-07-21-telegram-direct-fallback-v51";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -54,6 +54,10 @@ const TELEGRAM_BROWSER_SCHEDULER_URL = (
 const TELEGRAM_SCHEDULER_URL = (
   process.env.TELEGRAM_SCHEDULER_URL
   || "https://telegram-relay.motorport-dvs.ru"
+).replace(/\/+$/, "");
+const TELEGRAM_API_BASE_URL = (
+  process.env.TELEGRAM_API_BASE_URL
+  || "https://api.telegram.org"
 ).replace(/\/+$/, "");
 const TELEGRAM_PUBLISH_MODE = String(process.env.TELEGRAM_PUBLISH_MODE || "external").trim().toLowerCase();
 const TELEGRAM_EXTERNAL_SCHEDULER = TELEGRAM_PUBLISH_MODE !== "direct";
@@ -2977,6 +2981,77 @@ async function publishTelegramThroughRelay(payload, botToken) {
   };
 }
 
+async function telegramDirectCall(payload, botToken, chatId) {
+  if (!botToken || !chatId) throw new Error("Telegram настроен не полностью");
+
+  const text = String(payload?.text || "").trim();
+  const mediaUrl = String(payload?.mediaUrl || "").trim();
+  const mediaType = String(payload?.mediaType || "");
+  const isVideo = mediaType.startsWith("video/");
+  const method = mediaUrl ? (isVideo ? "sendVideo" : "sendPhoto") : "sendMessage";
+  const body = mediaUrl
+    ? {
+        chat_id: chatId,
+        [isVideo ? "video" : "photo"]: mediaUrl,
+        caption: text
+      }
+    : {
+        chat_id: chatId,
+        text
+      };
+
+  const response = await withTimeout(
+    fetch(`${TELEGRAM_API_BASE_URL}/bot${botToken}/${method}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "ContentFactoryTelegramDirect/1.0"
+      },
+      body: JSON.stringify(body)
+    }),
+    45000,
+    "Telegram"
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    throw new Error(data.description || data.error || `Telegram API: HTTP ${response.status}`);
+  }
+
+  return {
+    ok: true,
+    messageId: data.result?.message_id || "",
+    chatId: data.result?.chat?.id || chatId
+  };
+}
+
+async function publishTelegramDirect(payload, botToken, chatId) {
+  const text = String(payload?.text || "").trim();
+  const mediaUrl = String(payload?.mediaUrl || "").trim();
+  if (!mediaUrl || text.length <= 1024) {
+    return telegramDirectCall(payload, botToken, chatId);
+  }
+
+  const blocks = text.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
+  const caption = String(blocks.shift() || "Motor Port").slice(0, 1024);
+  const followupText = blocks.join("\n\n").trim() || text;
+  const mediaResult = await telegramDirectCall({
+    text: caption,
+    mediaUrl,
+    mediaType: String(payload?.mediaType || "")
+  }, botToken, chatId);
+  const textResult = await telegramDirectCall({
+    text: followupText,
+    mediaUrl: "",
+    mediaType: ""
+  }, botToken, chatId);
+
+  return {
+    ...textResult,
+    mediaMessageId: mediaResult.messageId || ""
+  };
+}
+
 app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) => {
   try {
     const userSettings = getUserSettingsForServer(req.workspaceUser);
@@ -3375,6 +3450,7 @@ async function runScheduledPublishing() {
 
   schedulerRunning = true;
   try {
+    let useDirectTelegramFallback = !TELEGRAM_EXTERNAL_SCHEDULER;
     if (TELEGRAM_EXTERNAL_SCHEDULER) {
       try {
         const result = await triggerExternalTelegramScheduler();
@@ -3383,6 +3459,7 @@ async function runScheduledPublishing() {
         }
       } catch (error) {
         console.error("[Scheduler] Внешний Telegram-планировщик недоступен:", error.message);
+        useDirectTelegramFallback = true;
       }
     }
 
@@ -3420,7 +3497,7 @@ async function runScheduledPublishing() {
           post.state = statusLabel(post.status);
           changed = true;
         }
-        if (platform === "telegram" && TELEGRAM_EXTERNAL_SCHEDULER) {
+        if (platform === "telegram" && TELEGRAM_EXTERNAL_SCHEDULER && !useDirectTelegramFallback) {
           continue;
         }
 
@@ -3463,16 +3540,16 @@ async function runScheduledPublishing() {
             syncQueueToWorkspace(user, queue);
             saveStore(store);
 
-            const result = await publishTelegramThroughRelay({
-              text,
-              mediaUrl,
-              mediaType
-            }, telegramBotToken);
+            const telegramPayload = { text, mediaUrl, mediaType };
+            const result = TELEGRAM_EXTERNAL_SCHEDULER
+              ? await publishTelegramDirect(telegramPayload, telegramBotToken, telegramChatId)
+              : await publishTelegramThroughRelay(telegramPayload, telegramBotToken);
 
             post.status = "published";
             post.state = statusLabel(post.status);
             post.publishedAt = new Date().toISOString();
             post.telegramMessageId = result.messageId || "";
+            post.telegramMediaMessageId = result.mediaMessageId || "";
             post.lastError = "";
             post.claimId = "";
             post.claimExpiresAt = 0;
