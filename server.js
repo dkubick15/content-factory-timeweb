@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-21-telegram-autopublish-v48";
+const APP_BUILD = "2026-07-21-telegram-scheduler-fallback-v49";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -2886,32 +2886,47 @@ async function triggerExternalTelegramScheduler(options = {}) {
       .createHmac("sha256", botToken)
       .update(`${timestamp}.scheduler`)
       .digest("hex");
-    const response = await withTimeout(
-      fetch(`${TELEGRAM_SCHEDULER_URL}/api/run-scheduler`, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; ContentFactoryScheduler/1.0)",
-        "X-Relay-Timestamp": timestamp,
-        "X-Relay-Signature": signature,
-        ...(sitesAccessToken
-          ? { "OAI-Sites-Authorization": `Bearer ${sitesAccessToken}` }
-          : {})
-        },
-        cache: "no-store"
-      }),
-      55000,
-      "Telegram-планировщик"
-    );
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || `Telegram-планировщик: HTTP ${response.status}`);
+    const schedulerUrls = [...new Set([
+      TELEGRAM_SCHEDULER_URL,
+      TELEGRAM_BROWSER_SCHEDULER_URL
+    ].filter(Boolean))];
+    let lastSchedulerError = null;
+
+    for (const schedulerUrl of schedulerUrls) {
+      try {
+        const response = await withTimeout(
+          fetch(`${schedulerUrl}/api/run-scheduler`, {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+              "User-Agent": "Mozilla/5.0 (compatible; ContentFactoryScheduler/1.0)",
+              "X-Relay-Timestamp": timestamp,
+              "X-Relay-Signature": signature,
+              ...(sitesAccessToken
+                ? { "OAI-Sites-Authorization": `Bearer ${sitesAccessToken}` }
+                : {})
+            },
+            cache: "no-store"
+          }),
+          55000,
+          "Telegram-планировщик"
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || `Telegram-планировщик: HTTP ${response.status}`);
+        }
+
+        externalTelegramSchedulerState.lastSuccessAt = new Date().toISOString();
+        externalTelegramSchedulerState.lastError = "";
+        externalTelegramSchedulerState.lastProcessed = Number(data.processed || 0);
+        return data;
+      } catch (error) {
+        lastSchedulerError = error;
+        console.warn(`Telegram-планировщик недоступен: ${schedulerUrl}`, error.message);
+      }
     }
 
-    externalTelegramSchedulerState.lastSuccessAt = new Date().toISOString();
-    externalTelegramSchedulerState.lastError = "";
-    externalTelegramSchedulerState.lastProcessed = Number(data.processed || 0);
-    return data;
+    throw lastSchedulerError || new Error("Не настроен адрес Telegram-планировщика.");
   } catch (error) {
     const cause = String(error?.cause?.message || "").trim();
     const message = cause
