@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-21-codex-relay-trigger-v54";
+const APP_BUILD = "2026-07-21-scheduled-relay-ticket-v55";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -1981,7 +1981,19 @@ app.get("/api/telegram/scheduler-ticket", requireAuth, publishLimiter, (req, res
     });
   }
 
-  const timestamp = Date.now().toString();
+  const now = Date.now();
+  const requestedTimestamp = Number(req.query?.at || 0);
+  if (requestedTimestamp && (
+    !Number.isFinite(requestedTimestamp)
+    || requestedTimestamp < now - 60 * 1000
+    || requestedTimestamp > now + 24 * 60 * 60 * 1000
+  )) {
+    return res.status(400).json({
+      error: "Время запуска должно быть в пределах ближайших 24 часов."
+    });
+  }
+
+  const timestamp = String(requestedTimestamp || now);
   const signature = crypto
     .createHmac("sha256", botToken)
     .update(`${timestamp}.scheduler`)
