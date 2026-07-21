@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-21-telegram-direct-fallback-v51";
+const APP_BUILD = "2026-07-21-telegram-direct-check-v52";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -1994,6 +1994,39 @@ app.get("/api/telegram/scheduler-ticket", requireAuth, publishLimiter, (req, res
     signature,
     expiresAt: Number(timestamp) + 5 * 60 * 1000
   });
+});
+
+app.get("/api/telegram/check-connection", requireAuth, publishLimiter, async (req, res) => {
+  try {
+    const { telegramBotToken, telegramChatId } = getUserSettingsForServer(req.workspaceUser);
+    if (!telegramBotToken || !telegramChatId) {
+      return res.status(503).json({ error: "Telegram настроен не полностью" });
+    }
+
+    const response = await withTimeout(
+      fetch(`${TELEGRAM_API_BASE_URL}/bot${telegramBotToken}/getMe`, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "ContentFactoryTelegramCheck/1.0"
+        },
+        cache: "no-store"
+      }),
+      15000,
+      "Telegram"
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.description || data.error || `Telegram API: HTTP ${response.status}`);
+    }
+
+    res.json({
+      ok: true,
+      chatId: telegramChatId,
+      botUsername: String(data.result?.username || "")
+    });
+  } catch (error) {
+    res.status(502).json({ error: error.message || "Telegram недоступен" });
+  }
 });
 
 app.post("/api/telegram/run-scheduler", requireAuth, publishLimiter, async (req, res) => {

@@ -35,6 +35,15 @@ async function waitFor(check, timeoutMs = 12000) {
 }
 
 const relay = http.createServer((req, res) => {
+  if (req.method === "GET" && req.url === `/bot${BOT_TOKEN}/getMe`) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      ok: true,
+      result: { id: 123, username: "test_motorport_bot" }
+    }));
+    return;
+  }
+
   if (req.method === "POST" && req.url === `/bot${BOT_TOKEN}/sendMessage`) {
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
@@ -131,6 +140,11 @@ try {
   assert.equal(result.state.lastError, "");
   assert.equal(Boolean(result.state.lastSuccessAt), true);
   assert.deepEqual(accessHeaders, ["Bearer stale-access-token", ""]);
+
+  const connection = await api("/api/telegram/check-connection", { token: login.token });
+  assert.equal(connection.ok, true);
+  assert.equal(connection.chatId, "@test-channel");
+  assert.equal(connection.botUsername, "test_motorport_bot");
 
   accessHeaders.length = 0;
   allowAnonymousScheduler = false;
