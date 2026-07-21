@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "check": "node --check server.js && node --check script.js && node --check chatgpt-app.js",
-    "test:telegram": "node scripts/test-telegram-scheduler.mjs"
+    "test:telegram": "node scripts/test-telegram-scheduler.mjs && node scripts/test-telegram-scheduler-access-fallback.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
