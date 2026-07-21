@@ -594,6 +594,7 @@ function createContentFactoryMcpServer(context) {
         total_characters: z.number(),
         queued: z.boolean(),
         scheduled_at: z.string(),
+        scheduler_trigger_url: z.string(),
         content_factory_url: z.string()
       },
       annotations: {
@@ -681,6 +682,9 @@ function createContentFactoryMcpServer(context) {
           total_characters: totalCharacters,
           queued: Boolean(queuedPost),
           scheduled_at: queuedPost?.scheduledAt || "",
+          scheduler_trigger_url: autoPublish && queuedPost
+            ? cleanText(createTelegramSchedulerTriggerUrl(), 2000)
+            : "",
           content_factory_url: `${baseUrl}/`
         };
         return {
@@ -819,6 +823,9 @@ function createContentFactoryMcpServer(context) {
           total_characters: totalCharacters,
           queued: Boolean(queuedPost),
           scheduled_at: queuedPost?.scheduledAt || "",
+          scheduler_trigger_url: autoPublish && queuedPost
+            ? cleanText(createTelegramSchedulerTriggerUrl(), 2000)
+            : "",
           content_factory_url: `${baseUrl}/`
         };
 
@@ -870,6 +877,7 @@ export function attachChatGptApp(app, options) {
     sanitizeWorkspace,
     plainPublicationHeadline,
     plainPublicationText,
+    createTelegramSchedulerTriggerUrl = () => "",
     baseUrlFromRequest
   } = options;
 

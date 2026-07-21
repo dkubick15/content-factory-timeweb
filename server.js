@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-21-telegram-direct-check-v52";
+const APP_BUILD = "2026-07-21-codex-relay-trigger-v53";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -2987,6 +2987,21 @@ async function triggerExternalTelegramScheduler(options = {}) {
   }
 }
 
+function createTelegramSchedulerTriggerUrl() {
+  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  if (!botToken || !TELEGRAM_BROWSER_SCHEDULER_URL) return "";
+
+  const timestamp = Date.now().toString();
+  const signature = crypto
+    .createHmac("sha256", botToken)
+    .update(`${timestamp}.scheduler`)
+    .digest("hex");
+  const triggerUrl = new URL(`${TELEGRAM_BROWSER_SCHEDULER_URL}/api/run-scheduler`);
+  triggerUrl.searchParams.set("ts", timestamp);
+  triggerUrl.searchParams.set("sig", signature);
+  return triggerUrl.href;
+}
+
 async function publishTelegramThroughRelay(payload, botToken) {
   const text = String(payload?.text || "").trim();
   const mediaUrl = String(payload?.mediaUrl || "").trim();
@@ -3678,6 +3693,7 @@ attachChatGptApp(app, {
   sanitizeWorkspace,
   plainPublicationHeadline,
   plainPublicationText,
+  createTelegramSchedulerTriggerUrl,
   baseUrlFromRequest
 });
 
