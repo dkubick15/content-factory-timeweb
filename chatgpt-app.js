@@ -434,6 +434,7 @@ function createContentFactoryMcpServer(context) {
     sanitizeWorkspace,
     plainPublicationHeadline,
     plainPublicationText,
+    createTelegramSchedulerTriggerUrl,
     uploadsDir,
     maxImageBytes
   } = context;
@@ -1211,6 +1212,7 @@ export function attachChatGptApp(app, options) {
       sanitizeWorkspace,
       plainPublicationHeadline,
       plainPublicationText,
+      createTelegramSchedulerTriggerUrl,
       uploadsDir,
       maxImageBytes
     });
