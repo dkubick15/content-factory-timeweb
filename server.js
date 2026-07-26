@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-21-scheduled-relay-ticket-v55";
+const APP_BUILD = "2026-07-27-browser-relay-publish-v56";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -3014,6 +3014,26 @@ function createTelegramSchedulerTriggerUrl() {
   return triggerUrl.href;
 }
 
+function createTelegramRelayPublishTicket(payload) {
+  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  if (!botToken || !TELEGRAM_BROWSER_SCHEDULER_URL) return null;
+
+  const body = JSON.stringify(payload);
+  const timestamp = Date.now().toString();
+  const signature = crypto
+    .createHmac("sha256", botToken)
+    .update(`${timestamp}.${body}`)
+    .digest("hex");
+
+  return {
+    url: `${TELEGRAM_BROWSER_SCHEDULER_URL}/api/publish`,
+    timestamp,
+    signature,
+    body,
+    expiresAt: Number(timestamp) + 5 * 60 * 1000
+  };
+}
+
 async function publishTelegramThroughRelay(payload, botToken) {
   const text = String(payload?.text || "").trim();
   const mediaUrl = String(payload?.mediaUrl || "").trim();
@@ -3136,6 +3156,11 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
     validateTelegramPayload(text, mediaUrl);
 
     if (TELEGRAM_EXTERNAL_SCHEDULER) {
+      const relayPayload = {
+        text,
+        mediaUrl,
+        mediaType: String(media?.type || "")
+      };
       const storedUser = req.store.users.find((item) => item.id === req.workspaceUser.id);
       if (!storedUser) {
         return res.status(401).json({ error: "Аккаунт не найден. Войди заново." });
@@ -3165,7 +3190,8 @@ app.post("/api/publish/telegram", requireAuth, publishLimiter, async (req, res) 
         ok: true,
         telegram: {
           queued: true,
-          scheduledAt: storedPost.scheduledAt
+          scheduledAt: storedPost.scheduledAt,
+          relayTicket: createTelegramRelayPublishTicket(relayPayload)
         }
       });
     }
@@ -3519,7 +3545,9 @@ async function runScheduledPublishing() {
         }
       } catch (error) {
         console.error("[Scheduler] Внешний Telegram-планировщик недоступен:", error.message);
-        useDirectTelegramFallback = true;
+        // Не перехватываем задачу прямым fetch из Timeweb: этот канал
+        // не имеет стабильного доступа к Telegram и превращал очередь в fetch failed.
+        // Материал остаётся в scheduled_relay для браузерного relay.
       }
     }
 

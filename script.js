@@ -2880,6 +2880,44 @@ document.addEventListener("DOMContentLoaded", () => {
     return data;
   }
 
+  async function publishTelegramTicketFromBrowser(ticket) {
+    if (!ticket?.url || !ticket?.body || !ticket?.timestamp || !ticket?.signature) {
+      throw new Error("Не удалось подготовить защищённую Telegram-публикацию.");
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 70000);
+    let response;
+    try {
+      response = await fetch(ticket.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Relay-Timestamp": ticket.timestamp,
+          "X-Relay-Signature": ticket.signature
+        },
+        body: ticket.body,
+        cache: "no-store",
+        credentials: "omit",
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error("Telegram не подтвердил публикацию за 70 секунд.");
+      }
+      throw new Error("Не удалось связаться с Telegram-relay. Материал остался в очереди.");
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || `Telegram-relay: HTTP ${response.status}`);
+    }
+    return data;
+  }
+
   async function publishOne(id) {
     const post = state.queue.find(q => q.id === id); if (!post) return;
     let relayOwnsState = false;
@@ -2904,6 +2942,19 @@ document.addEventListener("DOMContentLoaded", () => {
         post.claimExpiresAt = 0;
         await pushWorkspace();
         relayOwnsState = true;
+
+        if (result.relayTicket) {
+          const directResult = await publishTelegramTicketFromBrowser(result.relayTicket);
+          post.status = "published";
+          post.state = "Опубликовано";
+          post.publishedAt = new Date().toISOString();
+          post.telegramMessageId = directResult.messageId || "";
+          post.lastError = "";
+          post.publishAttempts = Number(post.publishAttempts || 0) + 1;
+          relayOwnsState = false;
+          showToast("Опубликовано в Telegram");
+          return;
+        }
 
         const schedulerResult = await triggerTelegramSchedulerFromBrowser();
         const refreshed = await fetchWorkspace();

@@ -165,16 +165,46 @@ try {
     }
   });
 
-  const publishedPost = await waitFor(async () => {
-    const workspace = await api("/api/workspace", { token: login.token });
-    const post = workspace.workspace.queue.find((item) => item.id === "external-direct-fallback-test");
-    return post?.status === "published" ? post : null;
+  await wait(1600);
+  const workspaceAfterFailure = await api("/api/workspace", { token: login.token });
+  const queuedPost = workspaceAfterFailure.workspace.queue.find(
+    (item) => item.id === "external-direct-fallback-test"
+  );
+  assert.equal(queuedPost.status, "scheduled_relay");
+  assert.equal(queuedPost.lastError || "", "");
+  assert.equal(telegramRequests.length, 0);
+
+  const immediatePost = {
+    id: "browser-relay-ticket-test",
+    title: "Публикация через браузер",
+    body: "Сервер возвращает подписанный relay-ticket и не идёт в Telegram напрямую.",
+    tags: "#test",
+    platform: "telegram",
+    contentFormat: "telegram",
+    status: "publishing"
+  };
+  const ticketResult = await api("/api/publish/telegram", {
+    method: "POST",
+    token: login.token,
+    body: { post: immediatePost, media: null }
   });
-  assert.equal(publishedPost.telegramMessageId, 951);
-  assert.equal(telegramRequests.length, 1);
-  assert.equal(telegramRequests[0].chat_id, "@test-channel");
-  assert.equal(telegramRequests[0].text.includes("Прямая резервная публикация"), true);
-  console.log("Telegram scheduler access and direct publishing fallback tests passed.");
+  assert.equal(ticketResult.telegram.queued, true);
+  assert.equal(ticketResult.telegram.relayTicket.url, `${RELAY_URL}/api/publish`);
+  assert.equal(
+    ticketResult.telegram.relayTicket.signature,
+    crypto
+      .createHmac("sha256", BOT_TOKEN)
+      .update(`${ticketResult.telegram.relayTicket.timestamp}.${ticketResult.telegram.relayTicket.body}`)
+      .digest("hex")
+  );
+
+  const storedTicketPost = await waitFor(async () => {
+    const workspace = await api("/api/workspace", { token: login.token });
+    return workspace.workspace.queue.find((item) => item.id === immediatePost.id);
+  });
+  assert.equal(storedTicketPost.status, "scheduled_relay");
+  assert.equal(telegramRequests.length, 0);
+  console.log("Telegram scheduler access fallback and browser relay ticket tests passed.");
 } catch (error) {
   console.error(appLogs);
   throw error;
