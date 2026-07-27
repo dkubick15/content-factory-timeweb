@@ -6,8 +6,6 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
   && apt-get install -y --no-install-recommends curl wget \
   && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g pm2
-
 RUN groupadd --gid 2000 app \
   && useradd --uid 2000 --gid 2000 -m -s /bin/bash app
 
