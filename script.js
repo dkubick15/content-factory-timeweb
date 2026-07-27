@@ -2255,9 +2255,12 @@ document.addEventListener("DOMContentLoaded", () => {
           const publishTime = nextHourInputValue();
           state.queue.push({
             id: uid('q'),
+            projectId: state.activeProjectId,
+            sourceIdeaId: idea.id,
             title: plainPublicationHeadline(content.headline || idea.title),
             body: plainPublicationText(content.body || idea.title),
             tags: plainPublicationText(content.tags || ""),
+            mediaId: idea.mediaId || "",
             publishDate,
             publishTime,
             scheduledAt: scheduledAtIso(publishDate, publishTime),
@@ -2266,6 +2269,7 @@ document.addEventListener("DOMContentLoaded", () => {
             status: "scheduled",
             state: "Запланировано"
           });
+          removeMaterialsMovedToQueue([idea.id]);
           saveState(); render(); showToast("В очереди!");
         }
       } else if (target === 'published' && type === 'scheduled') {
@@ -2584,6 +2588,20 @@ document.addEventListener("DOMContentLoaded", () => {
     showToast("Материал удалён");
   }
 
+  function removeMaterialsMovedToQueue(ids = []) {
+    const movedIds = new Set(ids.filter(Boolean));
+    if (!movedIds.size) return;
+
+    state.ideas = state.ideas.filter((idea) => !movedIds.has(idea.id));
+    movedIds.forEach((id) => selectedMaterialIds.delete(id));
+
+    if (movedIds.has(state.selectedIdeaId) || !state.ideas.some((idea) => idea.id === state.selectedIdeaId)) {
+      const nextIdea = state.ideas[0] || null;
+      state.selectedIdeaId = nextIdea?.id || "";
+      state.selectedMediaId = nextIdea?.mediaId || "";
+    }
+  }
+
   async function scheduleMaterialAfter(hours) {
     const idea = selectedIdea();
     if (!idea) return showToast("Сначала выбери материал");
@@ -2595,6 +2613,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return showToast(error.message);
     }
     state.queue.unshift(post);
+    removeMaterialsMovedToQueue([post.sourceIdeaId]);
     saveState();
     await pushWorkspace();
     showToast(`Запланировано на ${post.publishDate} в ${post.publishTime}`);
@@ -2702,7 +2721,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
       state.queue = [...posts, ...state.queue];
-      selectedMaterialIds.clear();
+      removeMaterialsMovedToQueue(ids);
       state.activeTab = "queue";
       showToast(`В очередь добавлено: ${posts.length} ${publicationWord(posts.length)}`);
     }
@@ -2819,7 +2838,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     state.queue.unshift(post);
+    removeMaterialsMovedToQueue([post.sourceIdeaId]);
     state.activeTab = "queue";
+    saveState();
     render();
     scrollToTop();
     showToast(`Запланировано на ${post.publishDate} в ${post.publishTime}`);
@@ -2834,7 +2855,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!confirmDzenReadiness(state.activePlatform)) return;
     const post = makeTelegramQueuePost("publishing");
     state.queue.unshift(post);
+    removeMaterialsMovedToQueue([post.sourceIdeaId]);
     state.activeTab = "queue";
+    saveState();
     render();
     scrollToTop();
     await publishOne(post.id);
@@ -3000,6 +3023,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } finally {
       post.claimId = "";
       post.claimExpiresAt = 0;
+      saveState();
       if (!relayOwnsState) await pushWorkspace();
       render();
     }
@@ -3292,18 +3316,20 @@ document.addEventListener("DOMContentLoaded", () => {
         state.queue.unshift({
           id: uid("q"),
           projectId: state.activeProjectId,
+          sourceIdeaId: idea.id,
           platform: "telegram",
           contentFormat,
           title: idea.title,
           body: idea.formats?.[contentFormat]?.body || idea.title,
           tags: idea.formats?.[contentFormat]?.tags || "",
-          mediaId: state.selectedMediaId || "",
+          mediaId: idea.mediaId || "",
           status: "scheduled",
           state: "Запланировано",
           publishDate: p.publishDate,
           publishTime: p.publishTime,
           scheduledAt: scheduledAtIso(p.publishDate, p.publishTime)
         });
+        removeMaterialsMovedToQueue([idea.id]);
         saveState();
         render();
         showToast("Добавлено в очередь");
