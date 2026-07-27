@@ -167,12 +167,48 @@ try {
 
   await wait(1600);
   const workspaceAfterFailure = await api("/api/workspace", { token: login.token });
-  const queuedPost = workspaceAfterFailure.workspace.queue.find(
+  const publishedPost = workspaceAfterFailure.workspace.queue.find(
     (item) => item.id === "external-direct-fallback-test"
   );
-  assert.equal(queuedPost.status, "scheduled_relay");
-  assert.equal(queuedPost.lastError || "", "");
-  assert.equal(telegramRequests.length, 0);
+  assert.equal(publishedPost.status, "published");
+  assert.equal(publishedPost.lastError || "", "");
+  assert.equal(telegramRequests.length, 1);
+
+  const batchStart = Date.now() - 3 * 60 * 60 * 1000;
+  for (let index = 0; index < 3; index += 1) {
+    await api("/api/queue", {
+      method: "POST",
+      token: login.token,
+      body: {
+        post: {
+          id: `recovered-batch-${index + 1}`,
+          title: `Восстановленная пачка ${index + 1}`,
+          body: "Планировщик сохраняет часовой интервал.",
+          tags: "#test",
+          platform: "telegram",
+          contentFormat: "telegram",
+          status: "scheduled_relay",
+          scheduledAt: new Date(batchStart + index * 60 * 60 * 1000).toISOString()
+        }
+      }
+    });
+  }
+
+  const recoveredBatch = await waitFor(async () => {
+    const workspace = await api("/api/workspace", { token: login.token });
+    const posts = workspace.workspace.queue
+      .filter((item) => String(item.id).startsWith("recovered-batch-"))
+      .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+    return posts[0]?.status === "published" ? posts : null;
+  });
+  assert.equal(recoveredBatch[1].status, "scheduled_local");
+  assert.equal(recoveredBatch[2].status, "scheduled_local");
+  assert.equal(new Date(recoveredBatch[1].scheduledAt).getTime() > Date.now() + 55 * 60 * 1000, true);
+  assert.equal(
+    new Date(recoveredBatch[2].scheduledAt).getTime() - new Date(recoveredBatch[1].scheduledAt).getTime(),
+    60 * 60 * 1000
+  );
+  assert.equal(telegramRequests.length, 2);
 
   const immediatePost = {
     id: "browser-relay-ticket-test",
@@ -202,9 +238,9 @@ try {
     const workspace = await api("/api/workspace", { token: login.token });
     return workspace.workspace.queue.find((item) => item.id === immediatePost.id);
   });
-  assert.equal(storedTicketPost.status, "scheduled_relay");
-  assert.equal(telegramRequests.length, 0);
-  console.log("Telegram scheduler access fallback and browser relay ticket tests passed.");
+  assert.equal(storedTicketPost.status, "publishing");
+  assert.equal(telegramRequests.length, 2);
+  console.log("Timeweb IPv4 scheduler and browser relay ticket tests passed.");
 } catch (error) {
   console.error(appLogs);
   throw error;

@@ -2652,6 +2652,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const dateValue = document.getElementById("batchDate")?.value || "";
     const timeValue = document.getElementById("batchTime")?.value || "";
     const intervalHours = Number(document.getElementById("batchInterval")?.value || 1);
+    const scheduleBatchId = uid("batch");
     const start = new Date(`${dateValue}T${timeValue}:00`);
     if (Number.isNaN(start.getTime()) || start.getTime() < Date.now() - 60000) {
       showToast("Выбери время не раньше текущего");
@@ -2669,7 +2670,10 @@ document.addEventListener("DOMContentLoaded", () => {
           scheduledAt: when.toISOString(),
           status: "scheduled",
           state: "Запланировано",
-          lastError: ""
+          lastError: "",
+          scheduleBatchId,
+          scheduleIntervalHours: intervalHours,
+          schedulePosition: index
         });
       });
       selectedQueueIds.clear();
@@ -2684,6 +2688,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!idea) continue;
         const when = new Date(start.getTime() + index * intervalHours * 60 * 60 * 1000);
         const post = makeQueuePostFromIdea(idea, when);
+        Object.assign(post, {
+          scheduleBatchId,
+          scheduleIntervalHours: intervalHours,
+          schedulePosition: index
+        });
         try {
           validateTelegramPost(post, state.media.find((item) => item.id === post.mediaId));
           posts.push(post);
@@ -2934,7 +2943,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const mediaPayload = media ? { url: media.url, type: media.type } : null;
       const result = await publishTelegramFromApp(post, mediaPayload);
       if (result?.queued) {
-        post.status = "scheduled_relay";
+        post.status = result.status || "scheduled_local";
         post.state = "Запланировано";
         post.scheduledAt = result.scheduledAt || new Date().toISOString();
         post.lastError = "";
@@ -2978,7 +2987,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (e) {
       if (relayOwnsState) {
-        post.status = "scheduled_relay";
+        post.status = "scheduled_local";
         post.state = "Запланировано";
         post.lastError = "";
         showToast(`${cleanError(e.message)} Материал остался в очереди.`);

@@ -32,6 +32,33 @@ async function waitFor(check, timeoutMs = 12000) {
 }
 
 const relay = http.createServer((req, res) => {
+  if (req.method === "GET" && req.url === `/bot${BOT_TOKEN}/getMe`) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      ok: true,
+      result: { id: 123, username: "test_motorport_bot" }
+    }));
+    return;
+  }
+
+  const telegramMethod = String(req.url || "").match(
+    new RegExp(`^/bot${BOT_TOKEN}/(sendMessage|sendPhoto|sendVideo)$`)
+  )?.[1];
+  if (req.method === "POST" && telegramMethod) {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      requests.push({ method: telegramMethod, ...payload });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: true,
+        result: { message_id: 900 + requests.length, chat: { id: -100123 } }
+      }));
+    });
+    return;
+  }
+
   const chunks = [];
   req.on("data", (chunk) => chunks.push(chunk));
   req.on("end", () => {
@@ -72,6 +99,7 @@ const app = spawn(process.execPath, ["server.js"], {
     DEMO_PASSWORD: "kubik",
     TELEGRAM_RELAY_URL: `http://127.0.0.1:${RELAY_PORT}`,
     TELEGRAM_BROWSER_SCHEDULER_URL: `http://127.0.0.1:${RELAY_PORT}`,
+    TELEGRAM_API_BASE_URL: `http://127.0.0.1:${RELAY_PORT}`,
     TELEGRAM_PUBLISH_MODE: "direct",
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     TELEGRAM_CHAT_ID: "@test-channel",
@@ -223,11 +251,11 @@ try {
   });
   assert.equal(longMediaResult.telegram.result.message_id, 904);
   assert.equal(requests.length, 4);
-  assert.equal(requests[2].mediaUrl, longMedia.url);
-  assert.equal(requests[2].mediaType, longMedia.type);
-  assert.equal(requests[2].text, longMediaPost.title);
-  assert.equal(requests[2].text.length <= 1024, true);
-  assert.equal(requests[3].mediaUrl, "");
+  assert.equal(requests[2].method, "sendPhoto");
+  assert.equal(requests[2].photo, longMedia.url);
+  assert.equal(requests[2].caption, longMediaPost.title);
+  assert.equal(requests[2].caption.length <= 1024, true);
+  assert.equal(requests[3].method, "sendMessage");
   assert.equal(requests[3].text.length > 1024, true);
   assert.equal(requests[3].text.length <= 4096, true);
 
