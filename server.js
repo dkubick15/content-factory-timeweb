@@ -42,7 +42,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '8080';
 
 
-const APP_BUILD = "2026-07-27-timeweb-ipv4-scheduler-v57";
+const APP_BUILD = "2026-07-27-github-relay-scheduler-v58";
 const TELEGRAM_RELAY_URL = (
   process.env.TELEGRAM_RELAY_URL
   || "https://motorports-telegram-relay.rabotarecldm.chatgpt.site"
@@ -61,6 +61,7 @@ const TELEGRAM_API_BASE_URL = (
 ).replace(/\/+$/, "");
 const TELEGRAM_PUBLISH_MODE = String(process.env.TELEGRAM_PUBLISH_MODE || "external").trim().toLowerCase();
 const TELEGRAM_EXTERNAL_SCHEDULER = TELEGRAM_PUBLISH_MODE !== "direct";
+const TELEGRAM_WORKER_TOKEN = String(process.env.TELEGRAM_WORKER_TOKEN || "").trim();
 // Очередь всегда исполняется самим Timeweb-сервером.
 // Browser relay остаётся только для кнопки «Опубликовать сейчас».
 const TELEGRAM_SCHEDULED_STATUS = "scheduled_local";
@@ -77,6 +78,22 @@ const localTelegramSchedulerState = {
   lastError: "",
   lastProcessed: 0
 };
+
+function requireTelegramWorker(req, res, next) {
+  const authorization = String(req.headers.authorization || "");
+  const supplied = authorization.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length).trim()
+    : "";
+  if (!TELEGRAM_WORKER_TOKEN || !supplied) {
+    return res.status(401).json({ error: "Внешний планировщик не авторизован." });
+  }
+  const actual = Buffer.from(supplied);
+  const expected = Buffer.from(TELEGRAM_WORKER_TOKEN);
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) {
+    return res.status(401).json({ error: "Внешний планировщик не авторизован." });
+  }
+  return next();
+}
 
 function extractJwt(value) {
   const text = String(value || "").trim();
@@ -1977,10 +1994,31 @@ app.get("/api/telegram/scheduler-status", requireAuth, (req, res) => {
   res.json({
     ok: true,
     managedExternally: false,
-    backgroundMode: "timeweb-ipv4",
+    backgroundMode: TELEGRAM_WORKER_TOKEN ? "github-actions-relay" : "worker-not-configured",
     schedulerUrl: PUBLIC_BASE_URL || SCHEDULER_BASE_URL,
     ...localTelegramSchedulerState
   });
+});
+
+app.post("/api/telegram/worker/claim", requireTelegramWorker, (req, res) => {
+  try {
+    const job = claimNextTelegramWorkerJob();
+    return res.json({ ok: true, job });
+  } catch (error) {
+    localTelegramSchedulerState.lastError = String(error.message || "Ошибка выдачи задания").slice(0, 500);
+    return res.status(500).json({ error: localTelegramSchedulerState.lastError });
+  }
+});
+
+app.post("/api/telegram/worker/complete", requireTelegramWorker, (req, res) => {
+  try {
+    const result = completeTelegramWorkerJob(req.body || {});
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    const status = Number(error.status || 500);
+    localTelegramSchedulerState.lastError = String(error.message || "Ошибка завершения задания").slice(0, 500);
+    return res.status(status).json({ error: localTelegramSchedulerState.lastError });
+  }
 });
 
 app.get("/api/telegram/scheduler-ticket", requireAuth, publishLimiter, (req, res) => {
@@ -2023,6 +2061,15 @@ app.get("/api/telegram/check-connection", requireAuth, publishLimiter, async (re
     const { telegramBotToken, telegramChatId } = getUserSettingsForServer(req.workspaceUser);
     if (!telegramBotToken || !telegramChatId) {
       return res.status(503).json({ error: "Telegram настроен не полностью" });
+    }
+
+    if (TELEGRAM_EXTERNAL_SCHEDULER) {
+      return res.json({
+        ok: true,
+        chatId: telegramChatId,
+        botUsername: "",
+        transport: "signed-relay"
+      });
     }
 
     const data = await telegramApiCall("getMe", telegramBotToken, null, {
@@ -3723,6 +3770,165 @@ function rebaseRemainingBatch(queue, anchorPost, anchorTimeMs, force = false) {
   return true;
 }
 
+function claimNextTelegramWorkerJob() {
+  localTelegramSchedulerState.lastAttemptAt = new Date().toISOString();
+  localTelegramSchedulerState.lastProcessed = 0;
+
+  const store = loadStore();
+  const now = Date.now();
+  const candidates = [];
+  let changed = false;
+
+  for (const user of store.users || []) {
+    const queue = Array.isArray(user.queue)
+      ? user.queue
+      : Array.isArray(user.workspace?.queue)
+        ? user.workspace.queue
+        : [];
+    changed = normalizeLegacyTelegramBatch(queue, now) || changed;
+
+    for (const post of queue) {
+      const platform = post.platform === "dzen" ? "telegram" : (post.platform || "telegram");
+      if (platform !== "telegram") continue;
+      post.platform = "telegram";
+
+      if (post.status === "publishing" && Number(post.claimExpiresAt || 0) <= now) {
+        post.status = TELEGRAM_SCHEDULED_STATUS;
+        post.state = statusLabel(post.status);
+        post.claimId = "";
+        post.claimExpiresAt = 0;
+        changed = true;
+      }
+      if (["scheduled", "scheduled_relay"].includes(post.status)) {
+        post.status = TELEGRAM_SCHEDULED_STATUS;
+        post.state = statusLabel(post.status);
+        changed = true;
+      }
+      if (post.status === "ready") {
+        post.status = TELEGRAM_SCHEDULED_STATUS;
+        post.state = statusLabel(post.status);
+        changed = true;
+      }
+
+      if (post.status !== TELEGRAM_SCHEDULED_STATUS || !post.scheduledAt) continue;
+      const scheduledTime = new Date(post.scheduledAt).getTime();
+      if (!Number.isFinite(scheduledTime) || scheduledTime > now) continue;
+      candidates.push({ user, queue, post, scheduledTime });
+    }
+
+    if (changed) syncQueueToWorkspace(user, queue);
+  }
+
+  candidates.sort((left, right) => left.scheduledTime - right.scheduledTime);
+  const candidate = candidates[0];
+  if (!candidate) {
+    if (changed) saveStore(store);
+    localTelegramSchedulerState.lastSuccessAt = new Date().toISOString();
+    localTelegramSchedulerState.lastError = "";
+    return null;
+  }
+
+  const { user, queue, post } = candidate;
+  const media = Array.isArray(user.workspace?.media)
+    ? user.workspace.media.find((item) => item.id && item.id === post.mediaId)
+    : null;
+  const rawMediaUrl = String(post.mediaUrl || media?.url || "").trim();
+  const mediaUrl = rawMediaUrl
+    ? new URL(rawMediaUrl, `${PUBLIC_BASE_URL || SCHEDULER_BASE_URL}/`).href
+    : "";
+  const mediaType = String(post.mediaType || media?.type || "");
+  const text = buildTelegramText(post);
+  validateTelegramPayload(text, mediaUrl);
+
+  const relayTicket = createTelegramRelayPublishTicket({ text, mediaUrl, mediaType });
+  if (!relayTicket) throw new Error("Не настроена подпись Telegram relay.");
+
+  const claimId = crypto.randomUUID();
+  post.status = "publishing";
+  post.state = statusLabel(post.status);
+  post.claimId = claimId;
+  post.claimExpiresAt = now + 10 * 60 * 1000;
+  post.lastError = "";
+  syncQueueToWorkspace(user, queue);
+  saveStore(store);
+  localTelegramSchedulerState.lastSuccessAt = new Date().toISOString();
+  localTelegramSchedulerState.lastError = "";
+
+  return {
+    userId: user.id,
+    postId: post.id,
+    claimId,
+    relayTicket
+  };
+}
+
+function completeTelegramWorkerJob(payload) {
+  const userId = String(payload.userId || "");
+  const postId = String(payload.postId || "");
+  const claimId = String(payload.claimId || "");
+  if (!userId || !postId || !claimId) {
+    const error = new Error("Не переданы идентификаторы задания.");
+    error.status = 400;
+    throw error;
+  }
+
+  const store = loadStore();
+  const user = (store.users || []).find((item) => String(item.id) === userId);
+  const queue = Array.isArray(user?.queue)
+    ? user.queue
+    : Array.isArray(user?.workspace?.queue)
+      ? user.workspace.queue
+      : [];
+  const post = queue.find((item) => String(item.id) === postId);
+  if (!user || !post) {
+    const error = new Error("Задание больше не существует.");
+    error.status = 404;
+    throw error;
+  }
+  if (post.status !== "publishing" || String(post.claimId || "") !== claimId) {
+    const error = new Error("Задание уже завершено или передано другому воркеру.");
+    error.status = 409;
+    throw error;
+  }
+
+  const attempts = Number(post.publishAttempts || 0) + 1;
+  post.publishAttempts = attempts;
+  post.claimId = "";
+  post.claimExpiresAt = 0;
+
+  if (payload.success === true) {
+    const result = payload.result && typeof payload.result === "object" ? payload.result : {};
+    post.status = "published";
+    post.state = statusLabel(post.status);
+    post.publishedAt = new Date().toISOString();
+    post.telegramMessageId = result.messageId || result.telegram?.messageId || "";
+    post.telegramMediaMessageId = result.mediaMessageId || result.telegram?.mediaMessageId || "";
+    post.lastError = "";
+    rebaseRemainingBatch(queue, post, Date.now());
+    localTelegramSchedulerState.lastPublishAt = post.publishedAt;
+    localTelegramSchedulerState.lastError = "";
+    localTelegramSchedulerState.lastProcessed = 1;
+  } else {
+    post.lastError = String(payload.error || "Telegram relay не опубликовал материал").slice(0, 500);
+    if (attempts < 3) {
+      const retryAt = Date.now() + 5 * 60 * 1000;
+      post.status = TELEGRAM_SCHEDULED_STATUS;
+      updatePostSchedule(post, new Date(retryAt));
+      rebaseRemainingBatch(queue, post, retryAt, true);
+    } else {
+      post.status = "error";
+    }
+    post.state = statusLabel(post.status);
+    localTelegramSchedulerState.lastError = post.lastError;
+    localTelegramSchedulerState.lastProcessed = 0;
+  }
+
+  syncQueueToWorkspace(user, queue);
+  saveStore(store);
+  localTelegramSchedulerState.lastSuccessAt = new Date().toISOString();
+  return { status: post.status, scheduledAt: post.scheduledAt || "" };
+}
+
 async function runScheduledPublishing() {
   if (schedulerRunning) {
     console.warn("[Scheduler] Предыдущий запуск ещё не завершён, пропускаем тик.");
@@ -3730,8 +3936,6 @@ async function runScheduledPublishing() {
   }
 
   schedulerRunning = true;
-  localTelegramSchedulerState.lastAttemptAt = new Date().toISOString();
-  localTelegramSchedulerState.lastProcessed = 0;
   try {
     const store = loadStore();
     const now = Date.now();
@@ -3777,21 +3981,18 @@ async function runScheduledPublishing() {
           return Number.isFinite(postTime) && postTime <= now;
         })
         .sort((left, right) => new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime());
-      let telegramHandledThisRun = false;
 
       for (const post of duePosts) {
         const platform = post.platform || "telegram";
-        if (platform === "telegram" && telegramHandledThisRun) continue;
-        if (platform === "telegram") telegramHandledThisRun = true;
+        // Telegram забирает GitHub Actions воркер и отправляет через signed relay.
+        // Timeweb не имеет стабильного исходящего соединения с api.telegram.org.
+        if (platform === "telegram" && TELEGRAM_EXTERNAL_SCHEDULER) continue;
 
         const userSettings = getUserSettingsForServer(user);
 
         try {
           if (platform === "telegram") {
-            const {
-              telegramBotToken,
-              telegramChatId
-            } = userSettings;
+            const { telegramBotToken, telegramChatId } = userSettings;
             if (!telegramBotToken || !telegramChatId) {
               post.status = "error";
               post.state = statusLabel(post.status);
@@ -3819,13 +4020,11 @@ async function runScheduledPublishing() {
             syncQueueToWorkspace(user, queue);
             saveStore(store);
 
-            const telegramPayload = { text, mediaUrl, mediaType };
             const result = await publishTelegramDirect(
-              telegramPayload,
+              { text, mediaUrl, mediaType },
               telegramBotToken,
               telegramChatId
             );
-
             post.status = "published";
             post.state = statusLabel(post.status);
             post.publishedAt = new Date().toISOString();
@@ -3835,9 +4034,6 @@ async function runScheduledPublishing() {
             post.claimId = "";
             post.claimExpiresAt = 0;
             post.publishAttempts = Number(post.publishAttempts || 0) + 1;
-            localTelegramSchedulerState.lastPublishAt = post.publishedAt;
-            localTelegramSchedulerState.lastError = "";
-            localTelegramSchedulerState.lastProcessed += 1;
             changed = rebaseRemainingBatch(queue, post, Date.now()) || changed;
           } else if (platform === "instagram") {
             const { instagramAccessToken, instagramUserId } = userSettings;
@@ -3895,9 +4091,6 @@ async function runScheduledPublishing() {
           }
           post.state = statusLabel(post.status);
           changed = true;
-          if (platform === "telegram") {
-            localTelegramSchedulerState.lastError = post.lastError.slice(0, 500);
-          }
           console.error(`[Scheduler] ${platform} error for user ${user.email}:`, pubErr.message);
         }
       }
@@ -3908,9 +4101,7 @@ async function runScheduledPublishing() {
     }
 
     saveStore(store);
-    localTelegramSchedulerState.lastSuccessAt = new Date().toISOString();
   } catch (err) {
-    localTelegramSchedulerState.lastError = String(err.message || "Ошибка планировщика").slice(0, 500);
     console.error("[Scheduler] Ошибка планировщика:", err.message);
   } finally {
     schedulerRunning = false;

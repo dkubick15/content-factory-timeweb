@@ -11,9 +11,8 @@ const RELAY_PORT = 19193;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const RELAY_URL = `http://127.0.0.1:${RELAY_PORT}`;
 const BOT_TOKEN = "test-bot-token";
-const accessHeaders = [];
-const telegramRequests = [];
-let allowAnonymousScheduler = true;
+const WORKER_TOKEN = "test-worker-token";
+const relayRequests = [];
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,53 +34,32 @@ async function waitFor(check, timeoutMs = 12000) {
 }
 
 const relay = http.createServer((req, res) => {
-  if (req.method === "GET" && req.url === `/bot${BOT_TOKEN}/getMe`) {
+  if (req.method !== "POST" || req.url !== "/api/publish") {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Not found" }));
+    return;
+  }
+
+  const chunks = [];
+  req.on("data", (chunk) => chunks.push(chunk));
+  req.on("end", () => {
+    const body = Buffer.concat(chunks).toString("utf8");
+    const timestamp = String(req.headers["x-relay-timestamp"] || "");
+    const signature = String(req.headers["x-relay-signature"] || "");
+    const expected = crypto
+      .createHmac("sha256", BOT_TOKEN)
+      .update(`${timestamp}.${body}`)
+      .digest("hex");
+    assert.equal(signature, expected);
+    relayRequests.push(JSON.parse(body));
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      ok: true,
-      result: { id: 123, username: "test_motorport_bot" }
-    }));
-    return;
-  }
-
-  if (req.method === "POST" && req.url === `/bot${BOT_TOKEN}/sendMessage`) {
-    const chunks = [];
-    req.on("data", (chunk) => chunks.push(chunk));
-    req.on("end", () => {
-      const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      telegramRequests.push(payload);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        ok: true,
-        result: { message_id: 951, chat: { id: -100123 } }
-      }));
-    });
-    return;
-  }
-
-  const timestamp = String(req.headers["x-relay-timestamp"] || "");
-  const signature = String(req.headers["x-relay-signature"] || "");
-  const expected = crypto
-    .createHmac("sha256", BOT_TOKEN)
-    .update(`${timestamp}.scheduler`)
-    .digest("hex");
-
-  assert.equal(req.method, "GET");
-  assert.equal(req.url, "/api/run-scheduler");
-  assert.equal(signature, expected);
-
-  const accessHeader = String(req.headers["oai-sites-authorization"] || "");
-  accessHeaders.push(accessHeader);
-  const denied = Boolean(accessHeader) || !allowAnonymousScheduler;
-  res.writeHead(denied ? 403 : 200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(denied
-    ? { error: "Forbidden" }
-    : { ok: true, processed: 0 }));
+    res.end(JSON.stringify({ ok: true, messageId: 950 + relayRequests.length }));
+  });
 });
 
 await new Promise((resolve) => relay.listen(RELAY_PORT, "127.0.0.1", resolve));
 
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "content-factory-scheduler-fallback-"));
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "content-factory-worker-"));
 const app = spawn(process.execPath, ["server.js"], {
   cwd: process.cwd(),
   env: {
@@ -93,13 +71,11 @@ const app = spawn(process.execPath, ["server.js"], {
     DEMO_EMAIL: "kubik",
     DEMO_PASSWORD: "kubik",
     TELEGRAM_RELAY_URL: RELAY_URL,
-    TELEGRAM_SCHEDULER_URL: RELAY_URL,
     TELEGRAM_BROWSER_SCHEDULER_URL: RELAY_URL,
     TELEGRAM_PUBLISH_MODE: "external",
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     TELEGRAM_CHAT_ID: "@test-channel",
-    TELEGRAM_SITES_ACCESS_TOKEN: "stale-access-token",
-    TELEGRAM_API_BASE_URL: RELAY_URL,
+    TELEGRAM_WORKER_TOKEN: WORKER_TOKEN,
     SCHEDULER_INTERVAL_MS: "500"
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -114,6 +90,7 @@ async function api(pathname, options = {}) {
     method: options.method || "GET",
     headers: {
       ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+      ...(options.worker ? { Authorization: `Bearer ${WORKER_TOKEN}` } : {}),
       ...(options.body ? { "Content-Type": "application/json" } : {})
     },
     body: options.body ? JSON.stringify(options.body) : undefined
@@ -123,6 +100,32 @@ async function api(pathname, options = {}) {
   return data;
 }
 
+async function executeWorkerJob(job) {
+  const ticket = job.relayTicket;
+  const relayResponse = await fetch(ticket.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Relay-Timestamp": ticket.timestamp,
+      "X-Relay-Signature": ticket.signature
+    },
+    body: ticket.body
+  });
+  const result = await relayResponse.json();
+  assert.equal(relayResponse.ok, true);
+  return api("/api/telegram/worker/complete", {
+    method: "POST",
+    worker: true,
+    body: {
+      userId: job.userId,
+      postId: job.postId,
+      claimId: job.claimId,
+      success: true,
+      result
+    }
+  });
+}
+
 try {
   await waitFor(() => api("/api/health?json=true"));
   const login = await waitFor(() => api("/api/auth/login", {
@@ -130,32 +133,19 @@ try {
     body: { email: "kubik", password: "kubik" }
   }));
 
-  const result = await api("/api/telegram/run-scheduler", {
-    method: "POST",
-    token: login.token,
-    body: {}
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.state.lastError, "");
-  assert.equal(Boolean(result.state.lastSuccessAt), true);
-  assert.deepEqual(accessHeaders, ["Bearer stale-access-token", ""]);
-
   const connection = await api("/api/telegram/check-connection", { token: login.token });
   assert.equal(connection.ok, true);
   assert.equal(connection.chatId, "@test-channel");
-  assert.equal(connection.botUsername, "test_motorport_bot");
+  assert.equal(connection.transport, "signed-relay");
 
-  accessHeaders.length = 0;
-  allowAnonymousScheduler = false;
   await api("/api/queue", {
     method: "POST",
     token: login.token,
     body: {
       post: {
-        id: "external-direct-fallback-test",
-        title: "Прямая резервная публикация",
-        body: "Текст уходит напрямую, когда внешний планировщик недоступен.",
+        id: "github-worker-test",
+        title: "Публикация через GitHub Actions",
+        body: "Timeweb только хранит очередь и выдаёт подписанное задание.",
         tags: "#test",
         platform: "telegram",
         contentFormat: "telegram",
@@ -165,14 +155,16 @@ try {
     }
   });
 
-  await wait(1600);
-  const workspaceAfterFailure = await api("/api/workspace", { token: login.token });
-  const publishedPost = workspaceAfterFailure.workspace.queue.find(
-    (item) => item.id === "external-direct-fallback-test"
-  );
+  const firstClaim = await api("/api/telegram/worker/claim", { method: "POST", worker: true });
+  assert.equal(firstClaim.job.postId, "github-worker-test");
+  assert.equal(firstClaim.job.relayTicket.url, `${RELAY_URL}/api/publish`);
+  await executeWorkerJob(firstClaim.job);
+
+  const workspaceAfterPublish = await api("/api/workspace", { token: login.token });
+  const publishedPost = workspaceAfterPublish.workspace.queue.find((item) => item.id === "github-worker-test");
   assert.equal(publishedPost.status, "published");
-  assert.equal(publishedPost.lastError || "", "");
-  assert.equal(telegramRequests.length, 1);
+  assert.equal(publishedPost.telegramMessageId, 951);
+  assert.equal(relayRequests.length, 1);
 
   const batchStart = Date.now() - 3 * 60 * 60 * 1000;
   for (let index = 0; index < 3; index += 1) {
@@ -194,13 +186,15 @@ try {
     });
   }
 
-  const recoveredBatch = await waitFor(async () => {
-    const workspace = await api("/api/workspace", { token: login.token });
-    const posts = workspace.workspace.queue
-      .filter((item) => String(item.id).startsWith("recovered-batch-"))
-      .sort((left, right) => String(left.id).localeCompare(String(right.id)));
-    return posts[0]?.status === "published" ? posts : null;
-  });
+  const batchClaim = await api("/api/telegram/worker/claim", { method: "POST", worker: true });
+  assert.equal(batchClaim.job.postId, "recovered-batch-1");
+  await executeWorkerJob(batchClaim.job);
+
+  const workspaceAfterBatch = await api("/api/workspace", { token: login.token });
+  const recoveredBatch = workspaceAfterBatch.workspace.queue
+    .filter((item) => String(item.id).startsWith("recovered-batch-"))
+    .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+  assert.equal(recoveredBatch[0].status, "published");
   assert.equal(recoveredBatch[1].status, "scheduled_local");
   assert.equal(recoveredBatch[2].status, "scheduled_local");
   assert.equal(new Date(recoveredBatch[1].scheduledAt).getTime() > Date.now() + 55 * 60 * 1000, true);
@@ -208,12 +202,14 @@ try {
     new Date(recoveredBatch[2].scheduledAt).getTime() - new Date(recoveredBatch[1].scheduledAt).getTime(),
     60 * 60 * 1000
   );
-  assert.equal(telegramRequests.length, 2);
+
+  const emptyClaim = await api("/api/telegram/worker/claim", { method: "POST", worker: true });
+  assert.equal(emptyClaim.job, null);
 
   const immediatePost = {
     id: "browser-relay-ticket-test",
     title: "Публикация через браузер",
-    body: "Сервер возвращает подписанный relay-ticket и не идёт в Telegram напрямую.",
+    body: "Сервер возвращает подписанный relay-ticket.",
     tags: "#test",
     platform: "telegram",
     contentFormat: "telegram",
@@ -226,21 +222,7 @@ try {
   });
   assert.equal(ticketResult.telegram.queued, true);
   assert.equal(ticketResult.telegram.relayTicket.url, `${RELAY_URL}/api/publish`);
-  assert.equal(
-    ticketResult.telegram.relayTicket.signature,
-    crypto
-      .createHmac("sha256", BOT_TOKEN)
-      .update(`${ticketResult.telegram.relayTicket.timestamp}.${ticketResult.telegram.relayTicket.body}`)
-      .digest("hex")
-  );
-
-  const storedTicketPost = await waitFor(async () => {
-    const workspace = await api("/api/workspace", { token: login.token });
-    return workspace.workspace.queue.find((item) => item.id === immediatePost.id);
-  });
-  assert.equal(storedTicketPost.status, "publishing");
-  assert.equal(telegramRequests.length, 2);
-  console.log("Timeweb IPv4 scheduler and browser relay ticket tests passed.");
+  console.log("GitHub Actions Telegram worker and browser relay ticket tests passed.");
 } catch (error) {
   console.error(appLogs);
   throw error;
