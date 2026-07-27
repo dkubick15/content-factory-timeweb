@@ -1,0 +1,103 @@
+name: Telegram queue scheduler
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: telegram-queue-scheduler
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-next:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Claim and publish the next due post
+        env:
+          WORKER_BASE_URL: https://cf-kubik.twc1.net
+          WORKER_TOKEN: ${{ secrets.TELEGRAM_WORKER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${WORKER_TOKEN}" ]]; then
+            echo "TELEGRAM_WORKER_TOKEN is not configured"
+            exit 1
+          fi
+
+          claim_file="${RUNNER_TEMP}/telegram-claim.json"
+          claim_code=$(curl -sS -o "${claim_file}" -w '%{http_code}' \
+            -X POST "${WORKER_BASE_URL}/api/telegram/worker/claim" \
+            -H "Authorization: Bearer ${WORKER_TOKEN}" \
+            -H 'Accept: application/json')
+          if [[ "${claim_code}" != "200" ]]; then
+            echo "Claim failed with HTTP ${claim_code}"
+            jq -r '.error // "unknown error"' "${claim_file}" 2>/dev/null || true
+            exit 1
+          fi
+
+          if [[ "$(jq -r '.job == null' "${claim_file}")" == "true" ]]; then
+            echo "No Telegram posts are due"
+            exit 0
+          fi
+
+          user_id=$(jq -r '.job.userId' "${claim_file}")
+          post_id=$(jq -r '.job.postId' "${claim_file}")
+          claim_id=$(jq -r '.job.claimId' "${claim_file}")
+          relay_url=$(jq -r '.job.relayTicket.url' "${claim_file}")
+          relay_timestamp=$(jq -r '.job.relayTicket.timestamp' "${claim_file}")
+          relay_signature=$(jq -r '.job.relayTicket.signature' "${claim_file}")
+          relay_body=$(jq -r '.job.relayTicket.body' "${claim_file}")
+
+          relay_file="${RUNNER_TEMP}/telegram-relay.json"
+          relay_code=$(curl -sS -o "${relay_file}" -w '%{http_code}' \
+            -X POST "${relay_url}" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json' \
+            -H "X-Relay-Timestamp: ${relay_timestamp}" \
+            -H "X-Relay-Signature: ${relay_signature}" \
+            --data-binary "${relay_body}" || true)
+
+          complete_file="${RUNNER_TEMP}/telegram-complete.json"
+          if [[ "${relay_code}" =~ ^2[0-9][0-9]$ ]] && [[ "$(jq -r '.ok == true' "${relay_file}" 2>/dev/null || echo false)" == "true" ]]; then
+            relay_result=$(jq -c '.' "${relay_file}")
+            jq -n \
+              --arg userId "${user_id}" \
+              --arg postId "${post_id}" \
+              --arg claimId "${claim_id}" \
+              --argjson result "${relay_result}" \
+              '{userId:$userId,postId:$postId,claimId:$claimId,success:true,result:$result}' \
+              > "${complete_file}"
+          else
+            relay_error=$(jq -r '.error // empty' "${relay_file}" 2>/dev/null || true)
+            if [[ -z "${relay_error}" ]]; then
+              relay_error="Telegram relay HTTP ${relay_code}"
+            fi
+            jq -n \
+              --arg userId "${user_id}" \
+              --arg postId "${post_id}" \
+              --arg claimId "${claim_id}" \
+              --arg error "${relay_error}" \
+              '{userId:$userId,postId:$postId,claimId:$claimId,success:false,error:$error}' \
+              > "${complete_file}"
+          fi
+
+          complete_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X POST "${WORKER_BASE_URL}/api/telegram/worker/complete" \
+            -H "Authorization: Bearer ${WORKER_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@${complete_file}")
+          if [[ "${complete_code}" != "200" ]]; then
+            echo "Complete failed with HTTP ${complete_code}"
+            exit 1
+          fi
+
+          if grep -q '"success":false' "${complete_file}"; then
+            echo "Telegram relay failed; the post was returned to the retry queue"
+            exit 1
+          fi
+          echo "One Telegram post was published"
